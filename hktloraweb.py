@@ -71,6 +71,7 @@ class HKTLoraWeb:
         tqdm.write(f"{Fore.RED}[ERROR] {msg}{Style.RESET_ALL}")
         logging.error(msg)
 
+    # 线程C：定时处理线程 B 生成的错误日志
     def extract_failed_urls(self):
         """从日志文件中提取失败的URL地址"""
         failed_urls = []
@@ -375,7 +376,8 @@ class HKTLoraWeb:
                             )
 
                             # 保存提交记录数据
-                            self.save_submission_data(page, link, self.CURRENT_OUTPUT_DIR)
+                            # 测试
+                            # self.save_submission_data(page, link, self.CURRENT_OUTPUT_DIR)
                             sub_pbar.update(1)
                             
                             # 添加随机延迟，避免请求过于频繁
@@ -416,6 +418,7 @@ class HKTLoraWeb:
             self.tqdm_error(f"提取分页信息时出错: {str(e)}")
             return 1, 1
 
+    # 线程A：创建单个浏览器实例并完成 www.hktlora.com 的登录逻辑
     def login_main_site(self, page):
         """登录到www.hktlora.com主站点"""
         try:
@@ -475,6 +478,60 @@ class HKTLoraWeb:
             self.tqdm_error(f"处理页面失败 {url}: {str(e)}")
             return False, None, None, None
 
+    # 线程B：定时刷新指定网页，抓取内容并保存到本地 JSON 文件，同时记录错误信息到日志文件
+    def do_refresh_pages(self, page, sync_top_pages=5):
+        with tqdm(total=1, desc=f"{Fore.BLUE}开始下载......{Style.RESET_ALL}", position=1, leave=True) as page_pbar:
+            # 先访问第一页获取总页数
+            page_pbar.set_description(f"{Fore.BLUE}处理第 首页 {Style.RESET_ALL}")
+            success, current_url, total_pages, current_page = self.download_url(
+                page, 
+                self.FORM_LIST_URL, 
+                page_num=1
+            )
+            if not success:
+                self.tqdm_error("无法访问表单列表页面，程序退出")
+                return
+            
+            page_pbar.total = total_pages
+            page_pbar.refresh()
+
+            # 处理后续分页数据
+            while True:
+                try:
+                    # 如果已经是最后一页或达到同步页数限制，退出循环
+                    if current_page >= (sync_top_pages if sync_top_pages is not None else total_pages):
+                        break
+                                            
+                    # 构造下一页的URL
+                    next_page_num = current_page + 1                        
+                    base_url = re.sub(r'&paged=\d+', '', current_url)  # 移除现有的paged参数
+                    if '?' in base_url:
+                        next_page_url = f"{base_url}&paged={next_page_num}"
+                    else:
+                        next_page_url = f"{base_url}?paged={next_page_num}"
+
+                    # 更新进度条
+                    page_pbar.set_description(f"{Fore.BLUE}处理第 {next_page_num}/{total_pages} 页{Style.RESET_ALL}")
+                    page_pbar.update(1)                             
+
+                    # 导航到下一页并提取数据
+                    success, current_url, total_pages, current_page = self.download_url(
+                        page,
+                        next_page_url,
+                        page_num=next_page_num
+                    )                       
+
+                    if not success:
+                        self.tqdm_warning(f"跳过第 {next_page_num} 页")
+                        continue
+
+                except (ValueError, TypeError) as e:
+                    self.tqdm_warning(f"无法解析页码数值: {str(e)}")
+                    break
+                except Exception as e:
+                    self.tqdm_error(f"处理分页时出错: {str(e)}")
+                    break
+    
     def run(self,sync_top_pages=5):
         """运行主程序"""
         try:
@@ -498,59 +555,60 @@ class HKTLoraWeb:
                             
                 # 提取表格数据
                 self.tqdm_info("开始提取Elementor_DB数据库表格数据", Fore.BLUE)
+                self.do_refresh_pages(page, sync_top_pages=sync_top_pages)
                 
                 # 创建分页进度条
-                with tqdm(total=1, desc=f"{Fore.BLUE}开始下载......{Style.RESET_ALL}", position=1, leave=True) as page_pbar:
-                    # 先访问第一页获取总页数
-                    page_pbar.set_description(f"{Fore.BLUE}处理第 首页 {Style.RESET_ALL}")
-                    success, current_url, total_pages, current_page = self.download_url(
-                        page, 
-                        self.FORM_LIST_URL, 
-                        page_num=1
-                    )
-                    if not success:
-                        self.tqdm_error("无法访问表单列表页面，程序退出")
-                        return
+                # with tqdm(total=1, desc=f"{Fore.BLUE}开始下载......{Style.RESET_ALL}", position=1, leave=True) as page_pbar:
+                #     # 先访问第一页获取总页数
+                #     page_pbar.set_description(f"{Fore.BLUE}处理第 首页 {Style.RESET_ALL}")
+                #     success, current_url, total_pages, current_page = self.download_url(
+                #         page, 
+                #         self.FORM_LIST_URL, 
+                #         page_num=1
+                #     )
+                #     if not success:
+                #         self.tqdm_error("无法访问表单列表页面，程序退出")
+                #         return
                     
-                    page_pbar.total = total_pages
-                    page_pbar.refresh()
+                #     page_pbar.total = total_pages
+                #     page_pbar.refresh()
 
-                    # 处理后续分页数据
-                    while True:
-                        try:
-                            # 如果已经是最后一页或达到同步页数限制，退出循环
-                            if current_page >= (sync_top_pages if sync_top_pages is not None else total_pages):
-                                break
+                #     # 处理后续分页数据
+                #     while True:
+                #         try:
+                #             # 如果已经是最后一页或达到同步页数限制，退出循环
+                #             if current_page >= (sync_top_pages if sync_top_pages is not None else total_pages):
+                #                 break
                                                        
-                            # 构造下一页的URL
-                            next_page_num = current_page + 1                        
-                            base_url = re.sub(r'&paged=\d+', '', current_url)  # 移除现有的paged参数
-                            if '?' in base_url:
-                                next_page_url = f"{base_url}&paged={next_page_num}"
-                            else:
-                                next_page_url = f"{base_url}?paged={next_page_num}"
+                #             # 构造下一页的URL
+                #             next_page_num = current_page + 1                        
+                #             base_url = re.sub(r'&paged=\d+', '', current_url)  # 移除现有的paged参数
+                #             if '?' in base_url:
+                #                 next_page_url = f"{base_url}&paged={next_page_num}"
+                #             else:
+                #                 next_page_url = f"{base_url}?paged={next_page_num}"
 
-                            # 更新进度条
-                            page_pbar.set_description(f"{Fore.BLUE}处理第 {next_page_num}/{total_pages} 页{Style.RESET_ALL}")
-                            page_pbar.update(1)                             
+                #             # 更新进度条
+                #             page_pbar.set_description(f"{Fore.BLUE}处理第 {next_page_num}/{total_pages} 页{Style.RESET_ALL}")
+                #             page_pbar.update(1)                             
 
-                            # 导航到下一页并提取数据
-                            success, current_url, total_pages, current_page = self.download_url(
-                                page,
-                                next_page_url,
-                                page_num=next_page_num
-                            )                       
+                #             # 导航到下一页并提取数据
+                #             success, current_url, total_pages, current_page = self.download_url(
+                #                 page,
+                #                 next_page_url,
+                #                 page_num=next_page_num
+                #             )                       
 
-                            if not success:
-                                self.tqdm_warning(f"跳过第 {next_page_num} 页")
-                                continue
+                #             if not success:
+                #                 self.tqdm_warning(f"跳过第 {next_page_num} 页")
+                #                 continue
 
-                        except (ValueError, TypeError) as e:
-                            self.tqdm_warning(f"无法解析页码数值: {str(e)}")
-                            break
-                        except Exception as e:
-                            self.tqdm_error(f"处理分页时出错: {str(e)}")
-                            break
+                #         except (ValueError, TypeError) as e:
+                #             self.tqdm_warning(f"无法解析页码数值: {str(e)}")
+                #             break
+                #         except Exception as e:
+                #             self.tqdm_error(f"处理分页时出错: {str(e)}")
+                #             break
 
                 # 完成处理
                 self.tqdm_info("所有提交记录处理完成", Fore.CYAN)
