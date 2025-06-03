@@ -4,26 +4,60 @@
 
 ```mermaid
 sequenceDiagram
-    participant A as 线程 A
-    participant B as 线程 B
-    participant C as 线程 C
+    participant 主线程
+    participant 线程A
+    participant 线程B
+    participant 线程C
+    participant 守护线程
+    participant 任务队列
+    participant Browser
 
-    loop 循环执行
-        A->>A: 创建浏览器实例并登录
-        loop 内部循环
-            B->>B: 定时刷新网页并保存内容
-            alt 浏览器实例异常
-                B-->>A: 关闭浏览器实例
-                B-->>B: 关闭线程 B
-                B-->>C: 关闭线程 C
-                break
-            else 正常执行
-                B-->>C: 执行完毕，创建线程 C
-                C->>C: 处理错误日志
-                C-->>B: 执行完毕，执行线程 B
-            end
+    %% 初始化
+    主线程->>线程A: 创建线程A
+    线程A->>Browser: 初始化Browser实例
+    线程A->>任务队列: 写入登录任务
+    线程A-->>主线程: 执行完毕
+
+    %% 守护线程监控
+    守护线程->>Browser: 持续监控
+    Browser-->>守护线程: 正常运行
+
+    %% 线程B抓取（异步非阻塞）
+    主线程->>线程B: 启动（每5分钟抓取）
+    loop 定时抓取
+        线程B->>任务队列: 消费登录任务（通过同步队列）
+        线程B->>Browser: 执行登录
+        线程B->>Browser: 刷新指定URL
+        Browser-->>线程B: 返回内容/异常
+        alt 成功
+            线程B->>内存缓冲: 暂存内容
+            内存缓冲->>文件系统: 满10条时批量写入JSON
+        else 失败
+            线程B->>任务队列: 写入ERROR级日志（带优先级）
         end
     end
+
+    %% 线程C日志处理（并行执行）
+    主线程->>线程C: 启动（每10分钟处理）
+    loop 定时处理
+        线程C->>任务队列: 先取CRITICAL级日志
+        线程C->>任务队列: 再取普通ERROR日志
+        线程C->>文件系统: 批量处理日志
+    end
+
+    %% 异常处理（可恢复场景）
+    Browser-->>守护线程: 抛出可恢复异常（如页面超时）
+    守护线程->>Browser: 重启当前页面
+    守护线程->>线程B: 通知恢复
+    线程B->>Browser: 继续执行抓取
+
+    %% 异常处理（不可恢复场景）
+    Browser--x 守护线程: 抛出不可恢复异常
+    守护线程->>主线程: 发送终止信号
+    主线程->>线程A: 关闭Browser
+    主线程->>线程B: 终止抓取
+    主线程->>线程C: 终止处理
+    主线程->>主线程: 等待3秒后重启线程链
 ```
 
 ## 说明
