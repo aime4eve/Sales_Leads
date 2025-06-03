@@ -5,65 +5,83 @@
 ```mermaid
 sequenceDiagram
     participant 主线程
+    participant APScheduler
     participant 线程A
     participant 线程B
     participant 线程C
-    participant 守护线程
-    participant 任务队列
     participant Browser
+    participant 文件系统
+    participant 异常处理
 
-    %% 初始化
-    主线程->>线程A: 创建线程A
-    线程A->>Browser: 初始化Browser实例
-    线程A->>任务队列: 写入登录任务
-    线程A-->>主线程: 执行完毕
-
-    %% 守护线程监控
-    守护线程->>Browser: 持续监控
-    Browser-->>守护线程: 正常运行
-
-    %% 线程B抓取（异步非阻塞）
-    主线程->>线程B: 启动（每5分钟抓取）
-    loop 定时抓取
-        线程B->>任务队列: 消费登录任务（通过同步队列）
-        线程B->>Browser: 执行登录
-        线程B->>Browser: 刷新指定URL
-        Browser-->>线程B: 返回内容/异常
-        alt 成功
-            线程B->>内存缓冲: 暂存内容
-            内存缓冲->>文件系统: 满10条时批量写入JSON
-        else 失败
-            线程B->>任务队列: 写入ERROR级日志（带优先级）
+    %% 初始化流程
+    主线程->>APScheduler: 初始化调度器（内存/数据库存储）
+    APScheduler->>APScheduler: 配置线程池执行器
+    主线程->>APScheduler: 添加线程A任务（一次性执行）
+    APScheduler->>线程A: 触发执行
+    线程A->>Browser: 创建Browser实例
+    线程A->>Browser: 执行登录逻辑
+    Browser-->>线程A: 登录成功/失败
+    alt 登录成功
+        线程A-->>APScheduler: 任务完成
+        APScheduler->>APScheduler: 添加线程B任务（固定间隔）
+        APScheduler->>线程B: 触发执行（初始延迟后）
+        线程B->>Browser: 打开指定URL
+        Browser-->>线程B: 返回页面内容
+        线程B->>文件系统: 保存内容到JSON
+        线程B-->>APScheduler: 任务完成
+        APScheduler->>APScheduler: 添加线程C任务（固定间隔）
+        loop 定时循环
+            APScheduler->>线程B: 按间隔触发任务（如每5分钟）
+            线程B->>Browser: 刷新页面
+            alt 抓取成功
+                Browser-->>线程B: 返回内容
+                线程B->>文件系统: 更新JSON
+                线程B-->>APScheduler: 任务成功
+            else 抓取失败
+                Browser-->>线程B: 抛出异常
+                线程B->>文件系统: 记录错误日志
+                线程B-->>异常处理: 报告错误
+                异常处理->>APScheduler: 请求临时暂停线程B
+                异常处理->>Browser: 尝试恢复会话
+                异常处理-->>APScheduler: 恢复线程B调度
+            end
+            APScheduler->>线程C: 按间隔触发任务（如每10分钟）
+            线程C->>文件系统: 读取错误日志
+            线程C->>文件系统: 分析/归档日志
+            线程C-->>APScheduler: 任务完成
         end
+    else 登录失败
+        线程A-->>异常处理: 报告登录失败
+        异常处理->>APScheduler: 暂停所有任务
+        异常处理->>文件系统: 记录严重错误
+        异常处理->>主线程: 请求人工干预
     end
 
-    %% 线程C日志处理（并行执行）
-    主线程->>线程C: 启动（每10分钟处理）
-    loop 定时处理
-        线程C->>任务队列: 先取CRITICAL级日志
-        线程C->>任务队列: 再取普通ERROR日志
-        线程C->>文件系统: 批量处理日志
-    end
-
-    %% 异常处理（可恢复场景）
-    Browser-->>守护线程: 抛出可恢复异常（如页面超时）
-    守护线程->>Browser: 重启当前页面
-    守护线程->>线程B: 通知恢复
-    线程B->>Browser: 继续执行抓取
-
-    %% 异常处理（不可恢复场景）
-    Browser--x 守护线程: 抛出不可恢复异常
-    守护线程->>主线程: 发送终止信号
-    主线程->>线程A: 关闭Browser
-    主线程->>线程B: 终止抓取
-    主线程->>线程C: 终止处理
-    主线程->>主线程: 等待3秒后重启线程链
+    %% 异常处理流程
+    Browser-->>异常处理: 抛出致命错误（如连接断开）
+    异常处理->>APScheduler: 暂停所有任务
+    异常处理->>线程A: 关闭Browser实例
+    异常处理->>文件系统: 记录系统错误
+    异常处理->>APScheduler: 重置任务状态
+    异常处理->>APScheduler: 重新添加线程A任务
+    APScheduler->>线程A: 重新触发登录流程（回到初始状态）
 ```
 
 ## 说明
-1. **线程 A**：负责创建单个浏览器实例并完成 www.hktlora.com 的登录逻辑。
-2. **线程 B**：定时刷新指定网页，抓取内容并保存到本地 JSON 文件，同时记录错误信息到日志文件。
-3. **线程 C**：定时处理线程 B 生成的错误日志。
+1. **APScheduler**:作为核心调度器，支持任务持久化与恢复
+   -  负责任务的创建、调度、状态管理和持久化，支持复杂的 Cron 表达式（如 "每天凌晨 2 点"）。
+   -  若程序重启，APScheduler 可从本地运行日志（用log格式，和网页抓取日志不是同一个文件，如果运行日志文件大小超过2M，则备份原来的，再新建一个）中恢复未完成的任务。
+   -  支持任务执行历史记录和状态追踪
+   -  异常处理集成：
+        -- APScheduler 的misfire_grace_time参数处理任务错过触发
+        -- 结合max_instances控制并发执行的任务数量
+        -- 与自定义异常处理模块协同工作
+   -  线程资源管理
+        -- 通过 APScheduler 的ThreadPoolExecutor控制工作线程数量
+        -- 支持任务优先级（如线程 C 的日志处理可设为低优先级）
+1. **线程 A**：负责创建单个浏览器实例并完成 www.hktlora.com 的登录逻辑，一次性任务（使用date触发器）。
+2. **线程 B**：定时刷新指定网页，抓取内容并保存到本地 JSON 文件，同时记录错误信息到日志文件，固定间隔任务（使用interval触发器，如每 5 分钟）。
+3. **线程 C**：定时处理线程 B 生成的错误日志，固定间隔任务（使用interval触发器，如每 10 分钟）。
 4. **执行逻辑**：
    - 先创建线程 A，完成浏览器实例创建和登录。
    - 线程 A 执行完毕后，进入内部循环，线程 B 和线程 C 交替执行。
@@ -71,3 +89,9 @@ sequenceDiagram
 5. **异常处理**：
    - 如果浏览器实例发生异常，线程 B 关闭浏览器实例及所有线程。
    - 跳出内部循环，重新执行外层循环，从线程 A 开始。
+
+
+
+
+
+
