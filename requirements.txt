@@ -1,6 +1,4 @@
-colorama==0.4.6
-greenlet==3.2.2
-playwright==1.52.0
-pyee==13.0.0
-tqdm==4.67.1
-typing_extensions==4.13.2
+playwright>=1.40.0
+apscheduler>=3.10.4
+tqdm>=4.66.1
+colorama>=0.4.6

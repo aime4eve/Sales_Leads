@@ -1,0 +1,21 @@
+{
+  "last_run": "2025-06-05 21:12:50",
+  "completed_runs": 95,
+  "error_count": 5,
+  "last_error": {
+    "time": "2025-06-05 11:50:11",
+    "message": "登录失败"
+  },
+  "last_status": "completed",
+  "sync_top_pages": -1,
+  "task_b_start_delay_seconds": 0,
+  "task_b_interval_minutes": 90,
+  "task_c_start_delay_seconds": 120,
+  "task_c_interval_minutes": 30,
+  "task_b_running": true,
+  "task_b_last_start": "2025-06-06 09:13:10",
+  "task_c_running": false,
+  "task_c_last_start": "2025-06-06 09:45:10",
+  "task_b_last_end": "2025-06-06 07:53:21",
+  "task_c_last_end": "2025-06-06 09:45:10"
+}

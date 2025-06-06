@@ -33,7 +33,9 @@ class HKTLoraWeb:
         os.makedirs(self.CURRENT_OUTPUT_DIR, exist_ok=True)
 
         # 配置日志文件
-        self.log_file = f'login_{self.CURRENT_TIME}.log'
+        log_dir = 'logs'  # 定义日志目录
+        os.makedirs(log_dir, exist_ok=True)  # 确保日志目录存在
+        self.log_file = os.path.join(log_dir, f'login_{self.CURRENT_TIME}.log')  # 使用完整路径
         self._setup_logging()
 
     def _setup_logging(self):
@@ -76,30 +78,47 @@ class HKTLoraWeb:
         """从日志文件中提取失败的URL地址"""
         failed_urls = []
         try:
-            # 查找所有日志文件
-            log_files = glob.glob("login_*.log")
+            # 在 logs 目录中查找所有日志文件
+            log_dir = 'logs'
+            if not os.path.exists(log_dir):
+                self.tqdm_warning(f"日志目录 {log_dir} 不存在")
+                return []
+            
+            log_files = glob.glob(os.path.join(log_dir, "login_*.log"))
+            self.tqdm_info(f"找到 {len(log_files)} 个日志文件", Fore.CYAN)
+            
             start_time = datetime.strptime(self.CURRENT_TIME, '%Y%m%d_%H%M%S')
+            self.tqdm_info(f"当前时间: {self.CURRENT_TIME}, 只处理早于此时间的日志", Fore.CYAN)
             
             for log_file in log_files:
                 try:
                     # 从文件名中提取时间
-                    file_time_str = re.search(r'login_(\d{8}_\d{6})\.log', log_file)
+                    file_time_str = re.search(r'login_(\d{8}_\d{6})\.log', os.path.basename(log_file))
                     if not file_time_str:
+                        self.tqdm_warning(f"无法从文件名提取时间: {log_file}")
                         continue
                         
                     file_time = datetime.strptime(file_time_str.group(1), '%Y%m%d_%H%M%S')
                     
-                    # 跳过早于该当前时间的文件
-                    if start_time and file_time > start_time:
+                    # 跳过晚于当前时间的文件
+                    if start_time and file_time >= start_time:
+                        self.tqdm_info(f"跳过较新的日志文件: {log_file} (文件时间: {file_time})", Fore.YELLOW)
                         continue
+                    
+                    self.tqdm_info(f"处理日志文件: {log_file}", Fore.CYAN)
                     
                     # 读取并解析日志文件
                     with open(log_file, 'r', encoding='utf-8') as f:
                         content = f.read()
                         # 使用正则表达式匹配URL
                         matches = re.finditer(r'navigating to "(https://[^"]+)"', content)
-                        for match in matches:
-                            failed_urls.append(match.group(1))
+                        file_urls = [match.group(1) for match in matches]
+                        
+                        if file_urls:
+                            self.tqdm_info(f"从文件 {log_file} 中找到 {len(file_urls)} 个URL", Fore.GREEN)
+                            failed_urls.extend(file_urls)
+                        else:
+                            self.tqdm_info(f"文件 {log_file} 中没有找到URL", Fore.YELLOW)
                     
                     # 如果是当前日志文件，先关闭日志处理器
                     if log_file == self.log_file:
@@ -127,7 +146,10 @@ class HKTLoraWeb:
         except Exception as e:
             self.tqdm_error(f"查找日志文件时出错: {str(e)}")
             
-        return list(set(failed_urls))  # 返回去重后的URL列表
+        # 去重并返回结果
+        unique_urls = list(set(failed_urls))
+        self.tqdm_info(f"总共找到 {len(failed_urls)} 个URL，去重后剩余 {len(unique_urls)} 个", Fore.CYAN)
+        return unique_urls
 
     def retry_failed_submissions(self, page, failed_urls):
         """重新尝试获取失败的提交记录"""
@@ -377,7 +399,7 @@ class HKTLoraWeb:
 
                             # 保存提交记录数据
                             # 测试
-                            # self.save_submission_data(page, link, self.CURRENT_OUTPUT_DIR)
+                            self.save_submission_data(page, link, self.CURRENT_OUTPUT_DIR)
                             sub_pbar.update(1)
                             
                             # 添加随机延迟，避免请求过于频繁
@@ -479,7 +501,7 @@ class HKTLoraWeb:
             return False, None, None, None
 
     # 线程B：定时刷新指定网页，抓取内容并保存到本地 JSON 文件，同时记录错误信息到日志文件
-    def do_refresh_pages(self, page, sync_top_pages=5):
+    def do_refresh_pages(self, page, sync_top_pages=2):
         with tqdm(total=1, desc=f"{Fore.BLUE}开始下载......{Style.RESET_ALL}", position=1, leave=True) as page_pbar:
             # 先访问第一页获取总页数
             page_pbar.set_description(f"{Fore.BLUE}处理第 首页 {Style.RESET_ALL}")
@@ -499,7 +521,7 @@ class HKTLoraWeb:
             while True:
                 try:
                     # 如果已经是最后一页或达到同步页数限制，退出循环
-                    if current_page >= (sync_top_pages if sync_top_pages is not None else total_pages):
+                    if current_page >= (sync_top_pages if sync_top_pages >0 else total_pages):
                         break
                                             
                     # 构造下一页的URL
@@ -532,7 +554,7 @@ class HKTLoraWeb:
                     self.tqdm_error(f"处理分页时出错: {str(e)}")
                     break
     
-    def run(self,sync_top_pages=5):
+    def run(self,sync_top_pages=2):
         """运行主程序"""
         try:
             self.tqdm_info("启动自动化登录脚本", Fore.CYAN)
@@ -557,59 +579,6 @@ class HKTLoraWeb:
                 self.tqdm_info("开始提取Elementor_DB数据库表格数据", Fore.BLUE)
                 self.do_refresh_pages(page, sync_top_pages=sync_top_pages)
                 
-                # 创建分页进度条
-                # with tqdm(total=1, desc=f"{Fore.BLUE}开始下载......{Style.RESET_ALL}", position=1, leave=True) as page_pbar:
-                #     # 先访问第一页获取总页数
-                #     page_pbar.set_description(f"{Fore.BLUE}处理第 首页 {Style.RESET_ALL}")
-                #     success, current_url, total_pages, current_page = self.download_url(
-                #         page, 
-                #         self.FORM_LIST_URL, 
-                #         page_num=1
-                #     )
-                #     if not success:
-                #         self.tqdm_error("无法访问表单列表页面，程序退出")
-                #         return
-                    
-                #     page_pbar.total = total_pages
-                #     page_pbar.refresh()
-
-                #     # 处理后续分页数据
-                #     while True:
-                #         try:
-                #             # 如果已经是最后一页或达到同步页数限制，退出循环
-                #             if current_page >= (sync_top_pages if sync_top_pages is not None else total_pages):
-                #                 break
-                                                       
-                #             # 构造下一页的URL
-                #             next_page_num = current_page + 1                        
-                #             base_url = re.sub(r'&paged=\d+', '', current_url)  # 移除现有的paged参数
-                #             if '?' in base_url:
-                #                 next_page_url = f"{base_url}&paged={next_page_num}"
-                #             else:
-                #                 next_page_url = f"{base_url}?paged={next_page_num}"
-
-                #             # 更新进度条
-                #             page_pbar.set_description(f"{Fore.BLUE}处理第 {next_page_num}/{total_pages} 页{Style.RESET_ALL}")
-                #             page_pbar.update(1)                             
-
-                #             # 导航到下一页并提取数据
-                #             success, current_url, total_pages, current_page = self.download_url(
-                #                 page,
-                #                 next_page_url,
-                #                 page_num=next_page_num
-                #             )                       
-
-                #             if not success:
-                #                 self.tqdm_warning(f"跳过第 {next_page_num} 页")
-                #                 continue
-
-                #         except (ValueError, TypeError) as e:
-                #             self.tqdm_warning(f"无法解析页码数值: {str(e)}")
-                #             break
-                #         except Exception as e:
-                #             self.tqdm_error(f"处理分页时出错: {str(e)}")
-                #             break
-
                 # 完成处理
                 self.tqdm_info("所有提交记录处理完成", Fore.CYAN)
                 
