@@ -1,0 +1,70 @@
+{
+    "dingding": {
+        "app_key": "dingfvqv5n3yxqqrgfdt",
+        "app_secret": "cdXiqOaIyzdsLeXTZdijumdEXZg2dgh_dYp2kQcenRfuJnSthYrBEVPTx7L65PGf",
+        "operatorId": "CMuBVSEounpxlYV4QORuNgiEiE",
+        "get_accessToken": "https://api.dingtalk.com/v1.0/oauth2/accessToken",        
+        "notable":{
+            "notable_id": "QG53mjyd80RxZkLyijakYMwdV6zbX04v",
+            "get_notable_base": "https://api.dingtalk.com/v1.0/notable/bases/{table_id}/sheets?operatorId={unionid}",
+            "get_notable_records": "https://api.dingtalk.com/v1.0/notable/bases/{table_id}/sheets/{sheetname}/records?operatorId={unionid}&maxResults=100",
+            "set_notable_records": "https://api.dingtalk.com/v1.0/notable/bases/{table_id}/sheets/{sheetname}/records?operatorId={unionid}",
+            "get_notable_record_byid": "https://api.dingtalk.com/v1.0/notable/bases/{table_id}/sheets/{sheetname}/records/{record_id}?operatorId={unionid}"
+        },
+        "organization":{
+        "get_department_listsub": "https://oapi.dingtalk.com/topapi/v2/department/listsub?access_token={access_token}&dept_id={dept_id}",
+        "get_user_list_by_department": "https://oapi.dingtalk.com/topapi/v2/user/list?access_token={access_token}&dept_id={dept_id}&cursor={cursor}&size={size}"
+        },
+        
+        "access_token": "93db80e9d31f3040812bbafb1df42a61",
+        "access_token_expires": 1748575174
+    },
+    "dify": {
+        "worktime_Estimate": "app-hLaaGPbI4SoCcEzV89vKBsYo",
+        "workflow_url": "http://172.22.1.123/v1/workflows/run",
+        "dify_input1": "tasktype",
+        "dify_input2": "question",
+        "dify_maxinput": 2048,
+        "worktime_DataGovernance": "app-twzuEupOZUGtz3uN5pwDcKGE",
+        "Summary_Conclusion": "app-kLXhiEZZn0f3BUQ6A3iHPaD6"
+    },
+    "postgresql": {
+        "user": "postgres",
+        "password": "123456",
+        "host": "172.22.1.123",
+        "database": "postgres",
+        "port": 5432,
+        "client_encoding": "UTF8",
+        "sslmode": "prefer",
+        "connect_timeout": 360,
+        "keepalives": 1,
+        "keepalives_idle": 60,
+        "keepalives_interval": 10,
+        "keepalives_count": 5
+    },
+    "table_mappings": {
+        "任务管理.json": {
+            "table_name": "task_notable",
+            "data_type": "notable"
+        },
+        "工时填报.json": {
+            "table_name": "timesheet_notable",
+            "data_type": "notable"
+        },
+        "部门列表.json": {
+            "table_name": "dingding_department",
+            "data_type": "table"
+        },
+        "员工列表.json": {
+            "table_name": "dingding_user",
+            "data_type": "table"
+        }
+    },
+    "sync_settings": {
+        "batch_size": 100,
+        "max_retries": 5,
+        "retry_delay": 2,
+        "enable_logging": true,
+        "log_level": "INFO"
+    }
+}

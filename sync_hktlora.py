@@ -49,11 +49,47 @@ class PlaywrightQueue:
     def stop(self):
         """停止Playwright操作线程"""
         self.running = False
-        if self.queue:
-            self.queue.put(None)  # 发送停止信号
-        if self.thread:
-            self.thread.join()
+        
+        # 清空队列
+        while not self.queue.empty():
+            try:
+                self.queue.get_nowait()
+            except:
+                pass
+                
+        # 发送停止信号
+        try:
+            self.queue.put(None)
+        except:
+            pass
+            
+        # 等待线程结束，但最多等待5秒
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=5)
+            
+        # 如果线程还在运行，尝试强制终止（仅在Windows上有效）
+        if self.thread and self.thread.is_alive():
+            try:
+                import ctypes
+                thread_id = self.thread.ident
+                if thread_id:
+                    res = ctypes.pythonapi.PyThreadState_SetAsyncExc(
+                        ctypes.c_long(thread_id), 
+                        ctypes.py_object(SystemExit)
+                    )
+                    if res > 1:
+                        ctypes.pythonapi.PyThreadState_SetAsyncExc(
+                            ctypes.c_long(thread_id), 
+                            None
+                        )
+            except:
+                pass
+                
         self._cleanup()
+            
+        # 清空引用
+        self.thread = None
+        self.hkt_web = None
             
     def _cleanup(self):
         """清理Playwright资源"""
@@ -743,14 +779,30 @@ def cleanup_and_exit(scheduler, resources, state_manager, signum=None, frame=Non
     try:
         logging.info("开始清理资源并退出程序...")
         
-        # 关闭调度器
+        # 先移除所有任务
         if scheduler and scheduler.running:
+            try:
+                scheduler.remove_all_jobs()
+                logging.info("已移除所有调度任务")
+            except:
+                pass
+            
+            # 关闭调度器
             logging.info("关闭APScheduler调度器")
             scheduler.shutdown(wait=False)  # 不等待任务完成
         
         # 清理资源
         if resources:
             logging.info("清理共享资源")
+            # 确保 playwright_queue 停止
+            if resources.playwright_queue:
+                resources.playwright_queue.running = False
+                if resources.playwright_queue.queue:
+                    while not resources.playwright_queue.queue.empty():
+                        try:
+                            resources.playwright_queue.queue.get_nowait()
+                        except:
+                            pass
             resources.cleanup()
         
         # 更新最终状态
@@ -758,12 +810,19 @@ def cleanup_and_exit(scheduler, resources, state_manager, signum=None, frame=Non
             logging.info("更新最终状态")
             state_manager.update_state(last_status='shutdown')
         
+        # 关闭所有日志处理器
+        for handler in logging.root.handlers[:]:
+            handler.close()
+            logging.root.removeHandler(handler)
+            
         logging.info("程序正常退出")
-        sys.exit(0)
+        
+        # 强制退出程序
+        os._exit(0)
         
     except Exception as e:
         logging.error(f"清理资源时出错: {str(e)}")
-        sys.exit(1)
+        os._exit(1)
 
 # 主函数
 def main():
