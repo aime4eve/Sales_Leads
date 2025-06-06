@@ -1,0 +1,99 @@
+erDiagram
+    线索 ||--o{ 交互记录 : 包含
+    线索 ||--o{ 销售机会 : 生成
+    线索 ||--o{ 备注 : 拥有
+    线索 ||--o{ 线索分配 : 分配给
+    线索 }|--|{ 公司 : 关联
+    线索 }|--|{ 营销活动 : 参与
+    用户 ||--o{ 备注 : 撰写
+    用户 ||--o{ 线索分配 : 负责
+    公司 }|--|{ 线索 : 关联
+    营销活动 }|--|{ 线索 : 包含
+
+    线索 {
+        BIGINT 线索ID PK
+        VARCHAR 名字
+        VARCHAR 姓氏
+        VARCHAR 邮箱 UNIQUE
+        VARCHAR 电话
+        VARCHAR 公司名称
+        VARCHAR 行业
+        VARCHAR 来源
+        INT 线索评分
+        ENUM 线索状态 "新, 温, 热, 已关闭, 无效"
+        TIMESTAMP 创建时间
+        TIMESTAMP 更新时间
+    }
+
+    公司 {
+        BIGINT 公司ID PK
+        VARCHAR 公司名称
+        VARCHAR 行业
+        VARCHAR 网站
+        TEXT 地址
+        TIMESTAMP 创建时间
+    }
+
+    交互记录 {
+        BIGINT 交互ID PK
+        BIGINT 线索ID FK
+        ENUM 交互类型 "邮件, 电话, 会议, 网络研讨会, 社交媒体"
+        TIMESTAMP 交互时间
+        TEXT 描述
+        VARCHAR 结果
+    }
+
+    营销活动 {
+        BIGINT 活动ID PK
+        VARCHAR 活动名称
+        ENUM 活动类型 "邮件, 社交媒体, 网络研讨会, 广告"
+        DATE 开始日期
+        DATE 结束日期
+        DECIMAL 预算
+        TIMESTAMP 创建时间
+    }
+
+    销售机会 {
+        BIGINT 机会ID PK
+        BIGINT 线索ID FK
+        VARCHAR 机会名称
+        DECIMAL 金额
+        ENUM 阶段 "潜在, 谈判, 提案, 成交, 未成交"
+        DATE 预计关闭日期
+        TIMESTAMP 创建时间
+        TIMESTAMP 更新时间
+    }
+
+    用户 {
+        BIGINT 用户ID PK
+        VARCHAR 用户名 UNIQUE
+        VARCHAR 邮箱 UNIQUE
+        ENUM 角色 "销售, 营销, 管理员"
+        TIMESTAMP 创建时间
+    }
+
+    备注 {
+        BIGINT 备注ID PK
+        BIGINT 线索ID FK
+        BIGINT 用户ID FK
+        TEXT 备注内容
+        TIMESTAMP 创建时间
+    }
+
+    线索_公司 {
+        BIGINT 线索ID FK
+        BIGINT 公司ID FK
+    }
+
+    线索_营销活动 {
+        BIGINT 线索ID FK
+        BIGINT 活动ID FK
+        INT 参与度评分
+        TIMESTAMP 参与时间
+    }
+
+    线索分配 {
+        BIGINT 线索ID FK
+        BIGINT 用户ID FK
+        TIMESTAMP 分配时间
+    }
