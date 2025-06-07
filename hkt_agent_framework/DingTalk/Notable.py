@@ -244,6 +244,69 @@ class Notable:
         """
         return self.dingtalk.ensure_access_token()
     
+    def add_record(self, sheet_name: str, fields: dict, table_id: str = None) -> tuple:
+        """
+        向指定的钉钉多维表添加单条记录。
+
+        此方法实现了V2设计方案，通过调用DingTalk类中统一的API请求方法来确保
+        重试、日志和错误处理的一致性。
+
+        参数:
+            sheet_name (str): 目标表格的名称。
+            fields (dict): 包含记录字段的字典。
+            table_id (str, optional): 多维表的ID。如果为None，则从配置中自动获取。
+
+        返回:
+            tuple: 成功时返回 (record_id, None)，失败时返回 (None, error_message)。
+        """
+        try:
+            # 1. 确保获取table_id和sheet_id
+            final_table_id = self._ensure_table_id(table_id)
+            sheet_id = self._find_sheet_id(sheet_name)
+            
+            # 2. 准备API请求参数
+            url_template = self.dingtalk.set_notable_records_url
+            if not url_template:
+                raise ValueError("钉钉配置中缺少'set_notable_records' URL")
+
+            # 使用与get_table_records一致的占位符
+            url = url_template.replace("{table_id}", final_table_id).replace("{sheetname}", sheet_id).replace("{unionid}", self.dingtalk.operator_id)
+
+            json_data = {
+                "records": [
+                    {
+                        "fields": fields
+                    }
+                ]
+            }
+            
+            # 3. 使用DingTalk中统一的方法发送API请求
+            result = self.dingtalk.call_dingtalk_api(
+                method='POST',
+                url=url,
+                json_data=json_data
+            )
+            
+            # 4. 解析成功的响应
+            record_id = None
+            if isinstance(result.get("value"), list) and len(result["value"]) > 0:
+                record_id = result["value"][0].get("id")
+
+            if not record_id:
+                error_msg = f"新增记录成功，但响应中未找到ID: {result}"
+                logger.error(error_msg)
+                return None, error_msg
+
+            logger.info(f"成功新增记录到'{sheet_name}'，记录ID: {record_id}")
+            return record_id, None
+
+        except Exception as e:
+            # 捕获call_dingtalk_api中抛出的任何异常
+            error_message = f"新增记录到'{sheet_name}'时发生错误: {str(e)}"
+            logger.error(error_message)
+            logger.error(traceback.format_exc())
+            return None, str(e)
+
     def get_table_record_byid(self, table_id=None, sheet_name="任务管理", record_id=None, definition_file="notable_definition.json"):
         """
         根据ID获取钉钉多维表中的特定记录
@@ -946,12 +1009,13 @@ class Notable:
             access_token = self.ensure_access_token()
             
             # 准备请求URL
-            url = self.dingtalk.set_notable_records_url.format(
-                table_id=table_id,
-                sheetname=sheet_id,
-                unionid=self.dingtalk.operator_id
-            )
-            
+            url_template = self.dingtalk.set_notable_records_url
+            if not url_template:
+                raise ValueError("钉钉配置中缺少'set_notable_records' URL")
+
+            # 使用与get_table_records一致的占位符
+            url = url_template.replace("{table_id}", table_id).replace("{sheetname}", sheet_id).replace("{unionid}", self.dingtalk.operator_id)
+
             # 准备请求头
             headers = {
                 'Content-Type': 'application/json',

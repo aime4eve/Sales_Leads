@@ -6,6 +6,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Union, Any, Tuple
+import traceback
 
 # 导入Notable类
 from hkt_agent_framework.DingTalk.Notable import Notable
@@ -312,20 +313,19 @@ class LeadsInsight:
     
     def sync_to_dingtalk(self) -> bool:
         """
-        将数据同步到钉钉多维表
+        将数据逐条同步到钉钉多维表，并记录每一条的成功与失败。
+        本方法实现了V2设计方案，采用逐条处理以增强容错性。
         
         返回:
-            bool: 操作是否成功
+            bool: 整个流程执行完毕则返回True，即使部分记录失败。发生致命错误则返回False。
         """
         try:
-            # 获取sales_leads目录中的所有JSON文件
+            # 1. 获取并解析源数据文件
             json_files = [f for f in os.listdir(self.sales_leads_dir) if f.endswith('.json')]
-            
             if not json_files:
-                logger.error("sales_leads目录中没有找到JSON文件")
-                return False
-            
-            # 解析所有文件
+                logger.warning("sales_leads目录中没有找到JSON文件可供同步。")
+                return True # 认为这是一个成功的状态，因为没有工作要做
+
             all_records = []
             for json_file in json_files:
                 if json_file.startswith('Elementor_DB_'):
@@ -339,48 +339,63 @@ class LeadsInsight:
                                 all_records.append(record)
             
             if not all_records:
-                logger.error("没有找到有效的记录")
-                return False
+                logger.warning("解析文件后，没有找到有效的记录可供同步。")
+                return True
+
+            # 2. 转换为钉钉格式
+            records_to_process = self._convert_to_notable_format(all_records)
             
-            # 转换为Notable格式
-            notable_records = self._convert_to_notable_format(all_records)
-            
-            # 准备输出文件
+            # 3. 逐条处理并记录结果
+            updated_records = []
+            success_count = 0
+            failure_count = 0
+            logger.info(f"开始逐条同步 {len(records_to_process)} 条记录到钉钉 '{self.target_table_name}'...")
+
+            for record in records_to_process:
+                fields_to_submit = record.get("fields", {})
+                if not fields_to_submit:
+                    logger.warning(f"发现一条空记录，已跳过: {record}")
+                    continue
+
+                record_id, error = self.notable.add_record(self.target_table_name, fields_to_submit)
+
+                if error is None and record_id:
+                    # 同步成功
+                    success_count += 1
+                    updated_record = {"id": record_id, "fields": fields_to_submit}
+                    logger.info(f"记录(编号: {fields_to_submit.get('编号')})同步成功, ID: {record_id}")
+                else:
+                    # 同步失败
+                    failure_count += 1
+                    updated_record = {"error": str(error), "fields": fields_to_submit}
+                    logger.error(f"记录(编号: {fields_to_submit.get('编号')})同步失败: {error}")
+                
+                updated_records.append(updated_record)
+
+            logger.info(f"同步处理完成: {success_count} 条成功, {failure_count} 条失败。")
+
+            # 4. 将最终结果（包含id和error）写入文件
             output_file = f"{self.target_table_name}.json"
-            # 使用项目根目录下的notable目录
             current_dir = os.path.dirname(os.path.abspath(__file__))
             output_path = os.path.join(current_dir, "notable", output_file)
             
-            # 确保输出目录存在
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             
-            # 构建最终的数据结构
             final_data = {
-                "totalRecords": len(notable_records),
-                "records": notable_records
+                "totalRecords": len(updated_records),
+                "records": updated_records
             }
             
-            # 保存记录到文件
             with open(output_path, 'w', encoding='utf-8') as f:
-                json.dump(final_data, f, ensure_ascii=False, indent=2)
+                json.dump(final_data, f, ensure_ascii=False, indent=4)
             
-            logger.info(f"成功保存 {len(notable_records)} 条记录到文件: {output_path}")
+            logger.info(f"成功将 {len(updated_records)} 条处理结果保存到文件: {output_path}")
             
-            # 同步到钉钉多维表
-            success = self.notable.set_table_records(
-                sheet_name=self.target_table_name,
-                input_file=output_path
-            )
-            
-            if success:
-                logger.info("成功同步数据到钉钉多维表")
-                return True
-            else:
-                logger.error("同步到钉钉多维表失败")
-                return False
+            return True # 流程完成
             
         except Exception as e:
-            logger.error(f"同步到钉钉多维表时出错: {str(e)}")
+            logger.error(f"同步到钉钉多维表的过程中发生致命错误: {str(e)}")
+            logger.error(f"详细错误: {traceback.format_exc()}")
             return False
     
     def _convert_to_notable_format(self, records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
