@@ -14,6 +14,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR, EVENT_JOB_MISSED
 from apscheduler.jobstores.memory import MemoryJobStore
+from LeadsInsight import LeadsInsight
 
 # 配置日志文件
 current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -227,7 +228,9 @@ class RunStateManager:
             'task_b_last_start': None,       # 任务B最后一次开始执行的时间
             'task_c_last_start': None,       # 任务C最后一次开始执行的时间
             'task_b_last_end': None,         # 任务B最后一次结束执行的时间
-            'task_c_last_end': None          # 任务C最后一次结束执行的时间
+            'task_c_last_end': None,         # 任务C最后一次结束执行的时间
+            'task_d_last_start': None,        # 任务D最后一次开始执行的时间
+            'task_d_last_end': None          # 任务D最后一次结束执行的时间
         }
     
     def _load_state(self):
@@ -300,6 +303,12 @@ class RunStateManager:
                 self.state['task_c_last_start'] = current_time
             else:
                 self.state['task_c_last_end'] = current_time
+        elif task_name == 'task_d':
+            self.state['task_d_running'] = is_running
+            if is_running:
+                self.state['task_d_last_start'] = current_time
+            else:
+                self.state['task_d_last_end'] = current_time
         self.save_state()
 
     def is_task_running(self, task_name):
@@ -308,6 +317,8 @@ class RunStateManager:
             return self.state.get('task_b_running', False)
         elif task_name == 'task_c':
             return self.state.get('task_c_running', False)
+        elif task_name == 'task_d':
+            return self.state.get('task_d_running', False)
         return False
 
     def get_task_last_end_time(self, task_name):
@@ -316,6 +327,8 @@ class RunStateManager:
             return self.state.get('task_b_last_end')
         elif task_name == 'task_c':
             return self.state.get('task_c_last_end')
+        elif task_name == 'task_d':
+            return self.state.get('task_d_last_end')
         return None
 
 # 共享资源类
@@ -824,6 +837,52 @@ def cleanup_and_exit(scheduler, resources, state_manager, signum=None, frame=Non
         logging.error(f"清理资源时出错: {str(e)}")
         os._exit(1)
 
+# 任务D: 定期同步销售线索数据到钉钉多维表
+def task_d_sync_leads(resources, scheduler):
+    """
+    任务D: 定期同步销售线索数据到钉钉多维表
+    
+    参数:
+        resources (SharedResources): 共享资源对象
+        scheduler (BackgroundScheduler): 调度器对象
+    """
+    try:
+        # 更新状态
+        resources.state_manager.update_state(last_status="task_d_running")
+        resources.state_manager.set_task_running("task_d", True)
+        resources.state_manager.update_state(task_d_last_start=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        
+        logging.info("开始执行任务D: 同步销售线索数据")
+        
+        # 创建LeadsInsight实例
+        leads_insight = LeadsInsight()
+        
+        # 执行处理流程
+        success = leads_insight.process()
+        
+        if success:
+            logging.info("任务D完成: 成功同步销售线索数据")
+        else:
+            logging.error("任务D失败: 无法同步销售线索数据")
+            resources.increment_error_count()
+        
+        # 更新状态
+        resources.state_manager.set_task_running("task_d", False)
+        resources.state_manager.update_state(task_d_last_end=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        resources.state_manager.save_state()
+        
+    except Exception as e:
+        logging.error(f"任务D执行出错: {str(e)}")
+        import traceback
+        logging.error(traceback.format_exc())
+        resources.increment_error_count()
+        
+        # 更新状态
+        resources.state_manager.set_task_running("task_d", False)
+        resources.state_manager.update_state(task_d_last_end=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        resources.state_manager.record_error(f"任务D执行出错: {str(e)}")
+        resources.state_manager.save_state()
+
 # 主函数
 def main():
     # 设置日志
@@ -832,9 +891,10 @@ def main():
     logging.info("开始网页抓取程序")
     logging.info(f"日志文件: {full_log_path}")
     
-    # 创建状态管理器
+    # 创建状态管理器并加载现有状态
     state_manager = RunStateManager()
-    logging.info(f"加载运行状态: {state_manager.get_state()}")
+    state_manager.update_state(last_status="starting")
+    state_manager.save_state()
     
     # 创建共享资源
     resources = SharedResources(state_manager)
@@ -844,43 +904,59 @@ def main():
     scheduler = create_scheduler()
     
     try:
-        # 注册信号处理函数
+        # 添加作业监听器
+        scheduler.add_listener(job_listener, EVENT_JOB_EXECUTED | EVENT_JOB_ERROR | EVENT_JOB_MISSED)
+        
+        # 添加SIGINT和SIGTERM信号处理
         signal.signal(signal.SIGINT, lambda signum, frame: cleanup_and_exit(scheduler, resources, state_manager, signum, frame))
         signal.signal(signal.SIGTERM, lambda signum, frame: cleanup_and_exit(scheduler, resources, state_manager, signum, frame))
         
-        # 添加作业监听器
-        scheduler.add_listener(
-            job_listener, 
-            EVENT_JOB_EXECUTED | EVENT_JOB_ERROR | EVENT_JOB_MISSED
+        # 添加初始任务A（登录任务）
+        scheduler.add_job(
+            task_a_login,
+            args=[resources, scheduler],
+            id='task_a_login',
+            trigger='date',
+            next_run_time=datetime.now() + timedelta(seconds=1),
+            replace_existing=True
         )
         
-        # 添加任务A（一次性任务，立即执行）
+        # 添加任务D（同步销售线索任务），每6小时执行一次
         scheduler.add_job(
-            task_a_login, 
-            'date',
+            task_d_sync_leads,
             args=[resources, scheduler],
-            id='task_a'
+            id='task_d_sync_leads',
+            trigger='interval',
+            hours=6,
+            next_run_time=datetime.now() + timedelta(minutes=5),  # 启动5分钟后开始执行
+            replace_existing=True
         )
+        
+        # 更新状态
+        state_manager.update_state(last_status="running")
+        state_manager.save_state()
         
         # 启动调度器
-        logging.info("启动APScheduler调度器")
         scheduler.start()
+        logging.info("调度器已启动，正在等待任务执行...")
         
-        # 等待用户中断
-        while True:
-            try:
+        # 等待调度器终止或用户中断
+        try:
+            while True:
                 time.sleep(1)
-            except KeyboardInterrupt:
-                logging.info("收到用户中断信号")
-                cleanup_and_exit(scheduler, resources, state_manager)
-                break  # 虽然 cleanup_and_exit 会调用 sys.exit()，但以防万一还是加上 break
-    
+        except (KeyboardInterrupt, SystemExit):
+            pass
+        
     except Exception as e:
-        logging.error(f"主程序异常: {str(e)}")
-        # 记录错误
-        state_manager.record_error(str(e))
-        # 清理资源并退出
+        logging.error(f"主程序执行出错: {str(e)}")
+        import traceback
+        logging.error(traceback.format_exc())
+    
+    finally:
+        # 确保资源正确清理和状态更新
         cleanup_and_exit(scheduler, resources, state_manager)
+    
+    return 0
 
 if __name__ == "__main__":
     main() 

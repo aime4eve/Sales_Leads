@@ -1,0 +1,92 @@
+[
+  {
+    "timestamp": "2025-06-06 18:39:25",
+    "sheet_name": "资源池",
+    "record": {
+      "fields": {
+        "客户": "Daniel Rodriguez",
+        "电子邮件": "daniel.rodriguez@syscom.mx",
+        "通讯号码": "+526143731055",
+        "国家": "México",
+        "邮编": "31000",
+        "留言内容": "Hi good afternoon. My name is Daniel Rodriguez, of the company SYSCOM, this company is located in Mexico, EE.UU. and Colombia. We are seeing your LoraWAN products, and we are interested in knowing more about it to market it, we have distributors that can help us with this. Can you send me more information about smart lock products by LoraWAN? At SYSCOM, we serve over 70,000 system integrators, capturing 90% of the IoT market in Mexico. We are excited to explore the possibility of introducing your products line to our extensive customer base, as we believe it has immense potential to thrive in the Mexican market. SYSCOM has a strong presence across Mexico, with 18 strategically located branches and a popular website that attracts over 30 million monthly views. Leveraging this extensive reach, we can design and execute a comprehensive marketing strategy to capture a significant share of the LoRa market. Our Webpage https://www.syscom.mx/ We hope to do business with you, regards.",
+        "留言日期": "2024-10-16 03:28:53",
+        "是否查阅": "huakuantong2024-10-29 05:10",
+        "留言位置": "https://www.hktlora.com/wp-admin/post.php?action=edit&post=5325"
+      }
+    },
+    "error": "设置记录失败: HTTPSConnectionPool(host='api.dingtalk.com', port=443): Max retries exceeded with url: /v1.0/notable/bases/QG53mjyd80RxZkLyijakYMwdV6zbX04v/sheets/hERWDMS/records?operatorId=CMuBVSEounpxlYV4QORuNgiEiE (Caused by ConnectTimeoutError(<urllib3.connection.HTTPSConnection object at 0x0000021E7CCFEE90>, 'Connection to api.dingtalk.com timed out. (connect timeout=None)'))"
+  },
+  {
+    "timestamp": "2025-06-06 18:41:25",
+    "sheet_name": "资源池",
+    "record": {
+      "fields": {
+        "客户": "Roaul Khan",
+        "电子邮件": "roaulkhan@gmail.com",
+        "通讯号码": "3107289721",
+        "国家": "United States",
+        "邮编": "91602",
+        "留言内容": "Hello. I am interested in the smart watch",
+        "留言日期": "2024-08-10 09:53:30",
+        "是否查阅": "huakuantong2024-08-14 10:25",
+        "留言位置": "https://www.hktlora.com/wp-admin/post.php?action=edit&post=5245"
+      }
+    },
+    "error": "设置记录失败: HTTPSConnectionPool(host='api.dingtalk.com', port=443): Max retries exceeded with url: /v1.0/notable/bases/QG53mjyd80RxZkLyijakYMwdV6zbX04v/sheets/hERWDMS/records?operatorId=CMuBVSEounpxlYV4QORuNgiEiE (Caused by ConnectTimeoutError(<urllib3.connection.HTTPSConnection object at 0x0000021E7D95C910>, 'Connection to api.dingtalk.com timed out. (connect timeout=None)'))"
+  },
+  {
+    "timestamp": "2025-06-06 18:43:25",
+    "sheet_name": "资源池",
+    "record": {
+      "fields": {
+        "客户": " ",
+        "电子邮件": "",
+        "通讯号码": "",
+        "国家": "Bolivia",
+        "邮编": "",
+        "留言内容": "I hope this message finds you well. I am interested in obtaining a quotation for the IoT LoRaWAN sensor modules shown in your product catalog. Specifically: Product: LoRaWAN Sensor Modules (white casing with blue front, as shown in images) MOQ: Please confirm the minimum order quantity and price per unit Pricing: Could you provide your best price for quantities of 50 units, 100 units, and 500 units? Shipping: Please indicate the estimated delivery time and shipping costs to [Your Country] Technical Information: Please share a detailed datasheet, including specifications and communication protocols Thank you in advance for your prompt response.",
+        "留言日期": "2025-05-24 12:40:38",
+        "是否查阅": "huakuantong2025-05-31 13:01",
+        "留言位置": "https://www.hktlora.com/wp-admin/post.php?action=edit&post=6143"
+      }
+    },
+    "error": "设置记录失败: HTTPSConnectionPool(host='api.dingtalk.com', port=443): Max retries exceeded with url: /v1.0/notable/bases/QG53mjyd80RxZkLyijakYMwdV6zbX04v/sheets/hERWDMS/records?operatorId=CMuBVSEounpxlYV4QORuNgiEiE (Caused by ConnectTimeoutError(<urllib3.connection.HTTPSConnection object at 0x0000021E7D95D450>, 'Connection to api.dingtalk.com timed out. (connect timeout=None)'))"
+  },
+  {
+    "timestamp": "2025-06-06 18:44:25",
+    "sheet_name": "资源池",
+    "record": {
+      "fields": {
+        "客户": " ",
+        "电子邮件": "",
+        "通讯号码": "",
+        "国家": "CHILE",
+        "邮编": "",
+        "留言内容": "I NEED A QUOTATION ASAP FOR A LARGE PROJECT FOR MINING HOTELS IN CHILE, THE TOTAL AMOUNT OF LOCKS REQUIRED ARE 10.000 UNITS. I APPRECIATE YOUR SUPPORT WITH LOCK PRICES, SPECIFICATION, OPERATION MANUALS LORAWAN SPECIFICATIONS AND LEAD TIMES TO DEFINE ENGINERING. THANKS IN ADVANCE",
+        "留言日期": "2024-06-14 03:55:24",
+        "是否查阅": "huakuantong2024-06-30 15:29",
+        "留言位置": "https://www.hktlora.com/wp-admin/post.php?action=edit&post=5151"
+      }
+    },
+    "error": "设置记录失败: HTTPSConnectionPool(host='api.dingtalk.com', port=443): Max retries exceeded with url: /v1.0/notable/bases/QG53mjyd80RxZkLyijakYMwdV6zbX04v/sheets/hERWDMS/records?operatorId=CMuBVSEounpxlYV4QORuNgiEiE (Caused by ConnectTimeoutError(<urllib3.connection.HTTPSConnection object at 0x0000021E7D95DA90>, 'Connection to api.dingtalk.com timed out. (connect timeout=None)'))"
+  },
+  {
+    "timestamp": "2025-06-06 18:50:54",
+    "sheet_name": "资源池",
+    "record": {
+      "fields": {
+        "客户": "Catalina Gallardo",
+        "电子邮件": "gallardo.catalina@msn.com",
+        "通讯号码": "634378456",
+        "国家": "Netherlands",
+        "邮编": "",
+        "留言内容": "I trust you are in good health. I can't help but think of the moments we've shared. Your presence in my life has brought an incredible amount of joy and excitement.Multimedia files attached for your perusal. As time goes by, my feelings for you intensify. I realize that I am increasingly attracted to you. Our undeniable chemistry is unmistakable.Explore the visuals included in the attachments. I cherish the moments we've spent together. The touch of your hand sends shivers down my spine. I eagerly anticipate to the next time I see you.Take a look at the multimedia files included. My life is happier with you in it. Seeing you smile, I find it impossible not to smile in return. When you laugh, it's a beautiful melody that warms my heart.Watch my videos included herein. I thank my lucky stars for you. You are my missing piece. I can't wait for our next rendezvous.Attached are my videos for your viewing. As the days go by, my love for you grows deeper. You are the fire that sets my heart ablaze. I can't wait to hold you in my arms.Enjoy my video content attached herein. My thoughts are consumed by you. Every morning, you're my initial thought. Every night, you're my last thought.The attached files contain the visuals. Our shared moments are my most treasured memories. The thought of you makes me smile. I eagerly anticipate our next meeting.Multimedia files attached for your perusal. My happiness is deeply tied to you. Being with you lightens up my days. I eagerly await our next reunion.Explore the videos enclosed for you. My heart beats faster when I think of you. Your affection ignites a passionate fire inside me. I can't wait to be in your arms.Explore the multimedia content enclosed. My life has become more beautiful since you entered it. You've made me a better version of myself. I'm counting the days until I see you again.I've added my pictures for your consideration. You're always on my mind. Your voice is like a soothing melody. I long to hear your laughter once more.Attached are the visuals I mentioned. I'm appreciative of your love. You are my missing piece. I long to hold you close.See the videos attached for your reference. As time goes on, my affection for you intensifies. You are the fire that ignites my passion. I yearn to be with you.Witness my visual content in the attachment. I can't help but gaze at your photo. The way you smile reminds me every day of the happiness you bring into my world. I'm looking forward to witnessing that smile again.Attached: videos for your viewing pleasure. You are my sunshine. Spending time with you brings warmth to my days. I eagerly await the comfort of your warmth.Explore the videos enclosed for you. You set my heart aflutter. Your caring nature melts my heart. I can't wait to feel your kindness again.Multimedia content attached for your consideration. I appreciate our love. Our affection for each other is a blazing fire that can never be quenched. I'm eagerly looking forward to the passion of our love.Enjoy my video content attached herein. You inspire me. Your creativity inspire my own imagination. I'm looking forward to our next collaborative project.Check out the videos attached for your reference. You are the missing piece in my puzzle. Our connection can't be broken. I eagerly anticipate our connection.Explore the multimedia content I've attached. You are my best friend. Your companionship means the world to me. I'm looking forward to the companionship of my closest friend.See my attached video clips. You are my trusted confidant. Your wisdom is priceless to me. I'm looking forward to the guidance of my trusted confidant.View my multimedia files in the attachment. You provide me with stability. Your support keeps me steady. I long to be anchored by you once more.Enjoy the multimedia materials included. You motivate me to reach for the stars. Your determination motivates my own goals. I eagerly await our shared aspirations.The attached files contain the visuals. You brighten even the darkest days. Your cheerful spirit brings light to my life. I can't wait to bask in your positivity again.Explore the attached video files. You are my rockstar. Your success inspire me to reach for my own dreams. I eagerly await our shared dreams.You can see my photos in the attachments. You are my tranquility. Your calming influence quiets my mind. I long to be calmed by you once more.Please find the visuals attached for your consideration. You are my travel companion. Your sense of adventure fuels my own desire for adventure. I eagerly await our next journey.Multimedia materials attached for your enjoyment. You are my dance floor companion. Your grace encourage me to dance. I can't wait to dance with you again.Attached are my photos for your viewing. You are my culinary partner. Your cooking expertise inspire me to cook. I'm looking forward to cooking with you.Witness my videos in the attachment. You are my movie marathon buddy. Your cinematic knowledge motivate me to explore new films. I eagerly await our next movie night.Explore the videos I've attached. You are my book club friend. Your literary insights inspire me to read more. I eagerly await our next book club meeting.Explore the multimedia content I've attached. You are my hiking partner. Your hiking expertise encourage me to embrace the great outdoors. Explore my multimedia content included herein. I hope you're having a wonderful day. I felt compelled to get in touch. I've been thinking about our conversations.Explore the multimedia files enclosed. I must confess that I've found our conversations truly delightful. Your words tend to captivating me. My videos are attached for your consideration. I'm intrigued by you. I'm interested in learning more about you. Enclosed are the visuals we discussed. There's a certain spark you've ignited in me. Our conversations stimulating. I'm eager to continue getting to know you. My photos are included in the attachments. Your words have a way of resonating with me. I feel a connection with your spirit. I'm eager to keep exploring our connection. Attached are my videos for your viewing. There's a certain chemistry between us. Your presence is captivating. I'm eager to explore where this connection might take us. See the videos included in this message. Your thoughts and ideas intrigue me. I find your intellect captivating. I'm eager to explore the depths of our intellectual connection. Check out the videos I've included. Your sense of humor is a breath of fresh air. Your wit is truly amusing. I'd love to share more laughs with you. Multimedia files enclosed for you. You're a delightful enigma. I'm curious to unravel your layers. Witness my attached video content. Your passions and interests are intriguing. I'm drawn to your enthusiasm. I'm excited about the shared adventures we could have. Enjoy my video content attached herein. Having you in my life has been a delightful surprise. I'm thankful for the connection we've formed. Multimedia materials attached for your enjoyment. Our conversations only make me more intrigued by you. I'm eager to see where this connection leads. Check the attachments for the visuals. You're always on my mind. I eagerly await our chats. Explore my multimedia content included herein. Listening to your voice is like enjoying a beautiful melody. I'm eager to listen to your voice again. Watch my videos included herein. I'm grateful for the connection we've formed. I cherish our conversations. My multimedia files are attached herein. With each interaction, my affection for you grows. I'm eager to explore this connection further. Take a look at the multimedia files included. I can't deny my attraction to you. I'm eager to see where this attraction takes us. See the attached videos for more information. I must say, you've truly brightened my days. I'm looking forward to our discussions. Check out the videos attached for your reference. You make my heart race. I'm excited about the thrills our connection might bring. My videos are enclosed for your viewing. You bring warmth and light into my world. I'm excited for the times we spend together. Explore the multimedia content I've attached. I'm drawn to your energy. I'd love to explore this connection. Enjoy the multimedia materials included. You've set my passions on fire. I'm looking forward to the fiery connection between us. Enjoy my video materials attached herein. I can't help but gaze at your photo. I'm excited to see more of you. Check out the images I've included. Your smile is truly mesmerizing. Your smile has a way of making me smile in return. Explore the video content in the attachment. You occupy my thoughts constantly. I eagerly await our chats. Enjoy the attached multimedia materials. I appreciate the happiness you've brought into my world. I'm excited for our chats. View the videos enclosed with this email. Our conversations only intensify my affection for you. I'm eager to explore this connection further. Check out the videos included in this message. I'm irresistibly attracted to you. I'd love to explore this attraction. View my video materials in the attachment. My life is happier with you in it. I'm looking forward to our discussions. Explore the attached video files. My heart beats faster when I think of you. I'd love to experience more moments that make my heart race. Watch the attached videos for more information. You're my ray of sunshine. I'm looking forward to our future encounters. View my videos enclosed for your consideration. I'm drawn to your energy. I'm eager to explore this energy. See my video content attached. You've set my desires ablaze. I'm eager for more fiery moments with you. I've included the visuals for your review. Your photo captivates my attention. I'm eager to explore your photo collection. My photos are included in the attachments. Your smile is enchanting. Your smile has a way of making me smile in return. Check out my videos included for you. I'm grateful for the connection we've formed. I cherish our conversations. Enjoy the attached multimedia materials. https://777qiuqiu.online/LOVEYOU/",
+        "留言日期": "2024-04-07 03:58:24",
+        "是否查阅": "huakuantong2024-05-06 02:25",
+        "留言位置": "https://www.hktlora.com/wp-admin/post.php?action=edit&post=4847"
+      }
+    },
+    "error": "设置记录失败: 500 Server Error: Server Error for url: https://api.dingtalk.com/v1.0/notable/bases/QG53mjyd80RxZkLyijakYMwdV6zbX04v/sheets/hERWDMS/records?operatorId=CMuBVSEounpxlYV4QORuNgiEiE"
+  }
+]

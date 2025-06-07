@@ -32,7 +32,9 @@ playwright install chromium
 .
 ├── sync_hktlora.py      # 主程序
 ├── hktloraweb.py        # HKT Lora网页操作类
+├── LeadsInsight.py      # 销售线索处理类
 ├── logs/                # 日志目录
+├── elementor_db_sync/   # 网页数据同步目录
 └── apscheduler_state.json  # 调度器状态文件
 ```
 
@@ -66,7 +68,7 @@ python sync_hktlora.py
 
 ### 1. 多任务协同工作
 
-程序包含三个主要任务：
+程序包含四个主要任务：
 
 - **任务A**（一次性任务）
   - 创建浏览器实例
@@ -83,6 +85,12 @@ python sync_hktlora.py
   - 定期处理错误日志
   - 重试失败的URL
   - 自动归档处理过的日志
+
+- **任务D**（定时任务）
+  - 整理网页内容数据
+  - 解析JSON文件内容
+  - 通过Notable对象将数据同步到钉钉多维表
+  - 每6小时执行一次
 
 ### 2. 智能任务调度
 
@@ -112,6 +120,13 @@ python sync_hktlora.py
 - 详细的操作记录
 - 错误追踪和分析
 
+### 6. 销售线索处理
+
+- 自动收集客户留言和联系信息
+- 整理网页表单数据
+- 同步到钉钉多维表格
+- 数据清洗和转换
+
 ## 配置说明
 
 ### 动态配置
@@ -137,12 +152,50 @@ python sync_hktlora.py
 - 日志文件命名格式：`login_YYYYMMDD_HHMMSS.log`
 - 处理过的日志文件会自动重命名为 `.bak` 后缀
 
+## 销售线索处理
+
+LeadsInsight类实现了以下功能：
+
+1. **整理网页内容**
+   - 从elementor_db_sync目录查找最新的数据文件
+   - 从YYYYMMDD_HHMMSS格式的目录中找到最新目录
+   - 从retry_YYYYMMDD_HHMMSS格式的目录中找到最新目录
+   - 将两个目录中的JSON文件复制到sales_leads目录
+
+2. **解析JSON文件内容**
+   - 从Elementor_DB_*.json文件中提取View信息和Read/Unread状态
+   - 根据提取的post ID读取submission_*.json文件获取客户留言详情
+   - 合并两个数据源的信息形成完整客户记录
+
+3. **同步到钉钉多维表**
+   - 使用Notable对象连接钉钉API
+   - 将客户数据转换为钉钉多维表格式
+   - 同步数据到"资源池"多维表中
+   - 记录同步状态和错误信息
+
+### 如何单独测试LeadsInsight
+
+可以使用提供的测试脚本：
+
+```bash
+python test_leads_insight.py --step 3
+```
+
+参数说明：
+- `--step 1`: 仅执行整理网页内容
+- `--step 2`: 仅执行同步到钉钉
+- `--step 3`: 执行完整流程（默认）
+- `--config`: 指定Notable配置文件路径
+- `--table`: 指定目标表格名称
+- `--db-dir`: 指定Elementor数据库目录
+
 ## 注意事项
 
 1. 确保程序运行时网络连接稳定
 2. 不要手动删除或修改正在使用的日志文件
 3. 修改配置文件后，新的配置将在下一次任务执行时生效
 4. 程序异常退出时会自动清理资源并保存状态
+5. 钉钉多维表同步需要有效的Notable配置
 
 ## 错误处理
 

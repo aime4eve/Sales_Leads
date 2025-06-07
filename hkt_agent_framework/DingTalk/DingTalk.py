@@ -2,6 +2,11 @@
 # 日期：2025-01-13
 # 开发日志：从Notable.py中提取钉钉API相关方法
 
+# 设置Python路径
+import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
 # 钉钉API访问对象
 
 import logging
@@ -14,7 +19,7 @@ import traceback
 # 导入随机库，用于指数退避策略中的抖动
 import random
 # 导入超时配置
-from timeout_config import get_timeout, get_error_message, get_retry_strategy
+from hkt_agent_framework.DingTalk.timeout_config import get_timeout, get_error_message, get_retry_strategy
 
 # 配置日志记录
 logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -155,19 +160,37 @@ class DingTalk:
             self.get_accessToken_url = config.get('get_accessToken')            
 
             # 获取钉钉多维表API配置信息
-            self.notable_id = config.get('notable_id')
-            self.get_notable_base_url = config.get('get_notable_base')
-            self.get_notable_records_url = config.get('get_notable_records')
-            self.set_notable_records_url = config.get('set_notable_records')
-            self.get_notable_record_byid_url = config.get('get_notable_record_byid')
-            # 获取钉钉部门列表
-            self.get_department_listsub_url = config.get('get_department_listsub')
-            # 获取钉钉用户列表
-            self.get_user_list_by_department_url = config.get('get_user_list_by_department')
+            notable_config = config.get('notable', {})
+            if notable_config:
+                self.notable_id = notable_config.get('notable_id')
+                self.get_notable_base_url = notable_config.get('get_notable_base')
+                self.get_notable_records_url = notable_config.get('get_notable_records')
+                self.set_notable_records_url = notable_config.get('set_notable_records')
+                self.get_notable_record_byid_url = notable_config.get('get_notable_record_byid')
+            else:
+                # 兼容旧版配置，直接从根级别读取
+                self.notable_id = config.get('notable_id')
+                self.get_notable_base_url = config.get('get_notable_base')
+                self.get_notable_records_url = config.get('get_notable_records')
+                self.set_notable_records_url = config.get('set_notable_records')
+                self.get_notable_record_byid_url = config.get('get_notable_record_byid')
+            
+            # 获取钉钉组织架构API配置信息
+            organization_config = config.get('organization', {})
+            if organization_config:
+                self.get_department_listsub_url = organization_config.get('get_department_listsub')
+                self.get_user_list_by_department_url = organization_config.get('get_user_list_by_department')
+            else:
+                # 兼容旧版配置，直接从根级别读取
+                self.get_department_listsub_url = config.get('get_department_listsub')
+                self.get_user_list_by_department_url = config.get('get_user_list_by_department')
             
             # 记录配置信息，便于调试
             logger.debug(f"配置信息: app_key={self.app_key}, operatorId={self.operator_id}")
             logger.debug(f"API URLs: get_accessToken_url={self.get_accessToken_url}")
+            logger.debug(f"Notable配置: notable_id={self.notable_id}")
+            logger.debug(f"Notable URLs: get_notable_base_url={self.get_notable_base_url}, get_notable_records_url={self.get_notable_records_url}")
+            logger.debug(f"Organization URLs: get_department_listsub_url={self.get_department_listsub_url}")
             
             # Access Token相关属性
             self.access_token = None
@@ -463,3 +486,6 @@ class DingTalk:
         
         # 执行请求
         return do_request() 
+if __name__ == "__main__":
+    dingtalk = DingTalk()
+    print(dingtalk.get_access_token())

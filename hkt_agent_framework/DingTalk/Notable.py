@@ -13,20 +13,29 @@ import re
 from datetime import datetime, timedelta
 from functools import reduce
 import traceback
-# 导入Dify类
-from Dify import Dify
+
 # 导入DingTalk类
-from DingTalk import DingTalk
+from .DingTalk import DingTalk
 # 导入tqdm进度条
 from tqdm import tqdm
 # 导入随机库，用于指数退避策略中的抖动
 import random
+import sys
 # 导入超时配置
-from timeout_config import get_timeout, get_error_message, get_timeout_tuple, get_retry_strategy
+from .timeout_config import get_timeout, get_error_message, get_timeout_tuple, get_retry_strategy
 
 # 配置日志记录
 logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("Notable")
+
+def countdown(seconds):
+    """倒计时显示函数"""
+    for i in range(seconds, 0, -1):
+        sys.stdout.write(f'\r等待下一次同步，还剩 {i} 秒...   ')
+        sys.stdout.flush()
+        time.sleep(1)
+    sys.stdout.write('\r' + ' ' * 50 + '\r')  # 清除倒计时显示
+    sys.stdout.flush()
 
 # 定义重试装饰器
 def retry_with_backoff(max_retries=3, initial_backoff=1, max_backoff=30, backoff_factor=2, retryable_errors=(requests.exceptions.Timeout, requests.exceptions.ConnectionError)):
@@ -110,8 +119,10 @@ class Notable:
             # 创建DingTalk实例用于API访问
             self.dingtalk = DingTalk(config_path=config_path, config_dict=config_dict)            
 
-            # 设置notable_dir为当前Python文件所在目录下的notable子目录
-            self.notable_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "notable")                                      
+            # 设置notable_dir为项目根目录下的notable子目录
+            current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            self.notable_dir = os.path.join(current_dir, "notable")
+            
             # 确保notable目录存在
             if not os.path.exists(self.notable_dir):
                 os.makedirs(self.notable_dir)
@@ -830,331 +841,167 @@ class Notable:
             logger.error(traceback.format_exc())
             raise
 
-    def set_table_record_byid(self,id,fields, table_id=None,sheet_name="任务管理", definition_file="notable_definition.json"):
-
-        try:
-            table_id = self._ensure_table_id(table_id)
-        except ValueError as e:
-            return {"success": False, "message": str(e), "updated": 0, "total": 0}
-                   # 使用配置中的正确URL格式
-        sheet_id = self._find_sheet_id(sheet_name, definition_file)        
-        update_url = self.dingtalk.set_notable_records_url.format(
-            table_id=table_id,
-            sheetname=sheet_id,
-            unionid=self.dingtalk.operator_id
-        )
+    def _save_failed_record(self, record, error_info, sheet_name):
+        """
+        保存同步失败的记录到文件
         
-        # 构建请求头
-        
-        access_token = self.ensure_access_token()
-        headers = {
-            'Content-Type': 'application/json',
-            'x-acs-dingtalk-access-token': access_token
-        }
-
-        update_data = {
-            "records":[{
-                "id": id,
-                "fields": fields
-            }]
-        }
-
-        # 发送请求
-        try:
-            response = requests.post(update_url, headers=headers, json=update_data)
+        参数:
+            record (dict): 失败的记录数据
+            error_info (str): 错误信息
+            sheet_name (str): 表格视图名称
             
-            # 检查是否成功
-            if response.status_code in [200, 201]:
-                
-                logger.info(f"成功更新 {id} 记录")
-                return {
-                    "success": True,
-                    "message": f"成功更新 1 条记录",
-                    "updated": 1,
-                    "total": 1,
-                    "updated_records": update_data
-                }
-            else:
-                error_response = None
+        返回:
+            bool: 保存是否成功
+        """
+        try:
+            # 构建失败记录的数据结构
+            failed_record = {
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "sheet_name": sheet_name,
+                "record": record,
+                "error": error_info
+            }
+            
+            # 构建失败记录文件路径
+            failed_records_file = os.path.join(self.notable_dir, "failed_records.json")
+            
+            # 读取现有的失败记录
+            existing_records = []
+            if os.path.exists(failed_records_file):
                 try:
-                    error_response = response.json()
-                except:
-                    error_response = response.text[:500]
-                
-                error_message = f"API错误: {response.status_code} {error_response}"
-                logger.error(error_message)
-                return {
-                    "success": False,
-                    "message": error_message,
-                    "updated": 0,
-                    "total": 0,
-                    "error_code": response.status_code
-                }
+                    with open(failed_records_file, 'r', encoding='utf-8') as f:
+                        existing_records = json.load(f)
+                except json.JSONDecodeError:
+                    logger.warning("失败记录文件格式错误，将创建新文件")
+                    existing_records = []
+            
+            # 添加新的失败记录
+            existing_records.append(failed_record)
+            
+            # 保存更新后的失败记录
+            with open(failed_records_file, 'w', encoding='utf-8') as f:
+                json.dump(existing_records, f, ensure_ascii=False, indent=2)
+            
+            logger.info(f"已将失败的记录保存到文件: {failed_records_file}")
+            return True
+            
         except Exception as e:
-            logger.error(f"请求时出现异常: {str(e)}")
-            # 确保traceback模块已导入，引用导入好的traceback模块
+            logger.error(f"保存失败记录时出错: {str(e)}")
             logger.error(traceback.format_exc())
-            return {
-                "success": False, 
-                "message": f"请求异常: {str(e)}",
-                "updated": 0,
-                "total": 0
-            }                
+            return False
 
     def set_table_records(self, table_id=None, sheet_name="任务管理", definition_file="notable_definition.json", 
                          input_file=None, handle_null=False):
         """
-        根据本地JSON文件中的数据更新钉钉多维表中的记录
-        
-        更新逻辑：
-        - 如果"需要AI核定"字段为False 且 "需要上传推理结论"字段为True，则更新以下字段：
-          - "AI参考意见"
-          - "AI核准工时"
-          - "AI核准时间"
-          - 推理结论相关字段
-        - 否则不更新
+        设置钉钉多维表中的记录
         
         参数:
             table_id (str, optional): 多维表ID，如果不提供则使用配置中的notable_id
             sheet_name (str): 表格视图名称，默认为"任务管理"
             definition_file (str): 表格定义文件路径，默认为"notable_definition.json"
-            input_file (str, optional): 输入文件名，默认为"{sheet_name}.json"
+            input_file (str): 输入文件路径，包含要设置的记录
             handle_null (bool): 是否处理空值，默认为False
             
         返回:
-            dict: 包含更新结果的字典
+            bool: 操作是否成功
         """
         try:
-            # 初始化错误统计
-            error_stats = {
-                "not_found_errors": 0,       # 404错误：记录不存在
-                "too_long_errors": 0,        # 400错误：字段值过长
-                "server_errors": 0,          # 500错误：服务器内部错误
-                "timeout_errors": 0,         # 超时错误
-                "other_errors": 0,           # 其他错误
-                "retried_success": 0,        # 重试后成功的请求
-                "null_values_handled": 0     # 处理的空值数量
-            }
-            
-            # 确保有有效的表格ID
-            try:
-                table_id = self._ensure_table_id(table_id)
-            except ValueError as e:
-                return {"success": False, "message": str(e), "updated": 0, "total": 0}
-            
-            # 如果未提供input_file，则使用默认文件名
+            # 验证必要参数
             if not input_file:
-                input_file = f"{sheet_name}.json"
-                
-            # 修改输入文件路径到notable目录
-            input_file_path = os.path.join(self.notable_dir, os.path.basename(input_file))
-                
-            # 检查本地文件是否存在
-            if not os.path.exists(input_file_path):
-                logger.error(f"输入文件不存在: {input_file_path}")
-                raise FileNotFoundError(f"输入文件不存在: {input_file_path}")
-                
-            logger.info(f"开始从文件读取数据: {input_file_path}")
+                logger.error("未提供输入文件路径")
+                return False
             
-            # 读取本地JSON文件
-            with open(input_file_path, 'r', encoding='utf-8') as f:
-                local_data = json.load(f)
-                
-            if not local_data or 'records' not in local_data or not local_data['records']:
-                logger.warning(f"本地文件中未找到有效记录: {input_file_path}")
-                return {"success": False, "message": "未找到有效记录", "updated": 0, "total": 0}
+            # 检查输入文件是否存在
+            if not os.path.exists(input_file):
+                logger.error(f"输入文件不存在: {input_file}")
+                return False
             
-            # 处理空值
-            if handle_null:
-                try:
-                    logger.info("启用空值处理功能")
-                    # 动态导入null_handler模块，避免循环依赖
-                    import null_handler
-                    
-                    # 处理记录中的空值
-                    original_records = local_data['records']
-                    local_data['records'] = null_handler.process_records(original_records)
-                    
-                    # 获取空值统计
-                    null_stats = null_handler.get_null_statistics()
-                    logger.info(f"空值处理完成，共处理 {null_stats['total_records']} 条记录，处理了 {null_stats['total_null_values']} 个空值")
-                    error_stats["null_values_handled"] = null_stats['total_null_values']
-                except Exception as e:
-                    logger.error(f"空值处理过程中发生错误: {str(e)}")
-                    logger.warning("将继续使用原始数据进行更新")
-                    import traceback
-                    logger.error(traceback.format_exc())
+            # 读取输入文件
+            try:
+                with open(input_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+            except Exception as e:
+                logger.error(f"读取输入文件时出错: {str(e)}")
+                return False
             
-            # 筛选需要更新的记录
-            records_to_update = []
-
-            # 添加筛选进度条
-            with tqdm(total=len(local_data['records']), desc="筛选待更新记录", unit="条") as filter_bar:
-                for record in local_data['records']:
-                    # 检查更新条件：需要AI核定为False 且 需要上传推理结论为True 
-                    if (record.get('需要AI核定', True) == False and record.get('需要上传推理结论', False) == True):
-                        # 提取需要更新的字段
-                        update_fields = {}
-                        record_fields = record.get('fields', {})
-                        for field in ["AI参考意见", "AI核准工时", "AI核准时间"]:
-                            if field in record_fields:
-                                # 对字段值进行截断处理已在set_table_record_byid中处理
-                                update_fields[field] = record_fields[field] if record_fields[field] else "暂无"
-                        
-                        record_fields = record.get('AI推理日志',{})
-                        for i, log in enumerate(record_fields):
-                            推理结论 = log['推理结果'].get('最终结论', '')
-                            # 对推理结论进行截断处理已在set_table_record_byid中处理
-                            field_key = f"第{i+1}次推理"
-                            update_fields[field_key] = {"markdown": 推理结论}
-
-                        # 如果有需要更新的字段，添加到更新列表
-                        logger.debug(f'{update_fields}')
-                        if update_fields:
-                            records_to_update.append({
-                                "id": record.get('id'),
-                                "fields": update_fields
-                            })
-                    filter_bar.update(1)
-                    filter_bar.set_postfix({"待更新": len(records_to_update)})
+            # 验证数据结构
+            if not isinstance(data, dict) or 'records' not in data or 'totalRecords' not in data:
+                logger.error("输入文件格式不正确，缺少records或totalRecords字段")
+                return False
             
-            # 检查是否有需要更新的记录
-            if not records_to_update:
-                logger.info("没有需要更新的记录")
-                return {"success": True, "message": "没有需要更新的记录", "updated": 0, "total": 0}
+            records = data.get('records', [])
+            total_records = data.get('totalRecords', 0)
             
-            logger.info(f"找到 {len(records_to_update)} 条记录需要更新")
+            if not records:
+                logger.warning("没有记录需要设置")
+                return True
             
-            # 查找sheet_id
+            # 获取sheet_id
             sheet_id = self._find_sheet_id(sheet_name, definition_file)
-            if not sheet_id:
-                error_msg = f"在定义文件中未找到表格视图 '{sheet_name}' 的ID"
-                logger.error(error_msg)
-                return {"success": False, "message": error_msg, "updated": 0, "total": 0}
-            logger.info(f"在定义文件中找到表格视图 '{sheet_name}' 的ID: {sheet_id}")
             
-            # 确保有有效的Access Token
-            self.ensure_access_token()
+            # 确保有有效的table_id
+            table_id = self._ensure_table_id(table_id)
             
-            # 构建API请求URL
-            # 使用配置中的正确URL格式
-            update_url = self.dingtalk.set_notable_records_url.format(
+            # 获取access token
+            access_token = self.ensure_access_token()
+            
+            # 准备请求URL
+            url = self.dingtalk.set_notable_records_url.format(
                 table_id=table_id,
                 sheetname=sheet_id,
                 unionid=self.dingtalk.operator_id
             )
             
-            # 构建请求头
+            # 准备请求头
             headers = {
                 'Content-Type': 'application/json',
-                'x-acs-dingtalk-access-token': self.dingtalk.access_token
+                'x-acs-dingtalk-access-token': access_token
             }
-            
-            # 构建请求体
-            # 修改请求体结构，确保符合钉钉API要求
-            records_to_update_list = []
-            records_to_update_dict = {}
-            
-            for record in records_to_update:
-                record_id = record.get('id')
-                if record_id:
-                    # 创建要更新的字段字典
-                    fields_to_update = {
-                        "AI参考意见": record.get("AI参考意见", {"markdown": ""}),
-                        "AI核准工时": record.get("AI核准工时", ""),
-                        "AI核准时间": record.get("AI核准时间", int(time.time() * 1000)),
-                        "第1次推理": record.get("第1次推理", {"markdown": ""}),
-                        "第2次推理": record.get("第2次推理", {"markdown": ""}),
-                        "第3次推理": record.get("第3次推理", {"markdown": ""})
+            with tqdm(total=total_records, desc="同步钉钉多维表", unit="条") as pbar:
+                for record in records:
+                    # 逐条更新记录
+                    # 准备请求数据
+                    payload = {
+                        "records": [
+                            {
+                            "fields": record.get("fields", {})
+                            }
+                        ]
                     }
+                    # 验证payload格式是否符合钉钉API要求
+                    if not all(isinstance(record.get("fields", {}), dict) for record in payload.get("records", [])):
+                        error_msg = f"记录格式不正确: {payload}"
+                        logger.error(error_msg)
+                        self._save_failed_record(record, error_msg, sheet_name)
+                        pbar.update(1)
+                        continue
                     
-                    # 将记录添加到请求体的records列表
-                    records_to_update_list.append({
-                        "id": record_id,
-                        "fields": fields_to_update
-                    })
-                    
-                    # 同时保存对字典的引用，方便后续更新本地记录状态
-                    records_to_update_dict[record_id] = fields_to_update
-            
-            request_body = {
-                "records": records_to_update_list
-            }
-            
-            # 发送请求
-            try:
-                response = requests.post(update_url, headers=headers, json=request_body)
-                
-                # 检查是否成功
-                if response.status_code in [200, 201]:
-                    # 标记已更新的记录
-                    updated_records = []
-                    for record in local_data['records']:
-                        if record.get('id') in records_to_update_dict:
-                            # 更新记录的状态
-                            record['需要上传推理结论'] = False
-                            updated_records.append(record.get('id', 'unknown'))
-                    
-                    # 保存更新后的记录状态
-                    with open(input_file_path, 'w', encoding='utf-8') as f:
-                        json.dump(local_data, f, ensure_ascii=False, indent=2)
-                    
-                    logger.info(f"成功更新 {len(updated_records)} 条记录")
-                    return {
-                        "success": True,
-                        "message": f"成功更新 {len(updated_records)} 条记录",
-                        "updated": len(updated_records),
-                        "total": len(records_to_update),
-                        "updated_records": updated_records
-                    }
-                else:
-                    error_response = None
                     try:
-                        error_response = response.json()
-                    except:
-                        error_response = response.text[:500]
-                    
-                    error_message = f"API错误: {response.status_code} {error_response}"
-                    logger.error(error_message)
-                    return {
-                        "success": False,
-                        "message": error_message,
-                        "updated": 0,
-                        "total": len(records_to_update),
-                        "error_code": response.status_code
-                    }
-            except Exception as e:
-                logger.error(f"请求时出现异常: {str(e)}")
-                # 确保traceback模块已导入，引用导入好的traceback模块
-                logger.error(traceback.format_exc())
-                return {
-                    "success": False, 
-                    "message": f"请求异常: {str(e)}",
-                    "updated": 0,
-                    "total": len(records_to_update_dict) if 'records_to_update_dict' in locals() else 0
-                }
-            
-        except requests.exceptions.Timeout:
-            logger.error("更新表格记录请求超时")
-            logger.error(get_error_message("update_record"))
-            return {"success": False, "message": "请求超时", "updated": 0, "total": 0}
-        except requests.exceptions.HTTPError as e:
-            logger.error(f"HTTP错误: {str(e)}")
-            error_message = str(e)
-            if hasattr(e, 'response') and e.response:
-                try:
-                    error_detail = e.response.json()
-                    error_message = json.dumps(error_detail, ensure_ascii=False)
-                    logger.error(f"错误详情: {error_message}")
-                except:
-                    error_message = e.response.text[:500]
-                    logger.error(f"响应内容: {error_message}...")
-            return {"success": False, "message": f"HTTP错误: {error_message}", "updated": 0, "total": 0}
+                        # 发送请求
+                        response = requests.post(url, headers=headers, json=payload)
+                        response.raise_for_status()
+                        result = response.json()
+                        if result.get('value', [{}])[0].get('id') is not None:  
+                            logger.info(f"成功设置 {result.get('value', [{}])[0].get('id')} 记录")
+                        else:
+                            # 记录同步失败的数据
+                            error_msg = f"设置记录失败: {result}"
+                            logger.error(error_msg)
+                            self._save_failed_record(record, error_msg, sheet_name)
+                        pbar.update(1)
+                        countdown(10)
+                        # time.sleep(3)               
+                    except Exception as e:
+                        error_msg = f"设置记录失败: {str(e)}"
+                        logger.error(error_msg)
+                        self._save_failed_record(record, error_msg, sheet_name)
+                        pbar.update(1)
+                        continue
+                                      
+            return True
         except Exception as e:
-            logger.error(f"更新表格记录时出现未知错误: {str(e)}")
-            logger.error(traceback.format_exc())
-            return {"success": False, "message": f"未知错误: {str(e)}", "updated": 0, "total": 0}
-                
+            logger.error(f"设置记录时出错: {str(e)}")
+            return False
 
     def _ensure_table_id(self, table_id=None):
         """
