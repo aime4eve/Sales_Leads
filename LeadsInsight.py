@@ -7,9 +7,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Union, Any, Tuple
 import traceback
+import sys
+import time
 
 # 导入Notable类
 from hkt_agent_framework.DingTalk.Notable import Notable
+
+# 在配置日志之前，确保日志目录存在
+if not os.path.exists('logs'):
+    os.makedirs('logs')
 
 # 配置日志记录
 logging.basicConfig(
@@ -86,6 +92,15 @@ class LeadsInsight:
             logger.error(f"初始化Notable对象失败: {str(e)}")
             raise
     
+    def countdown(self, seconds):
+        """倒计时显示函数"""
+        for i in range(seconds, 0, -1):
+            sys.stdout.write(f'\r等待下一次评估，还剩 {i} 秒...   ')
+            sys.stdout.flush()
+            time.sleep(1)
+        sys.stdout.write('\r' + ' ' * 50 + '\r')  # 清除倒计时显示
+        sys.stdout.flush()
+
     def _find_latest_directory(self, base_dir: str, pattern: str) -> Optional[str]:
         """
         按照指定模式查找最新的目录
@@ -137,7 +152,9 @@ class LeadsInsight:
     
     def copy_files_to_sales_leads(self) -> bool:
         """
-        将最新目录中的JSON文件复制到sales_leads目录
+        将最新目录中的JSON文件复制到sales_leads目录。
+        对于submission_*.json文件，如果目标目录已存在则跳过复制。
+        对于其他JSON文件（如Elementor_DB_*.json），仍然执行覆盖复制。
         
         返回:
             bool: 操作是否成功
@@ -156,6 +173,22 @@ class LeadsInsight:
             
             # 跟踪复制文件的数量
             copied_count = 0
+            skipped_count = 0
+            
+            def copy_file_with_check(src_file: str, dst_file: str):
+                nonlocal copied_count, skipped_count
+                filename = os.path.basename(src_file)
+                
+                # 对于submission_*.json文件，检查是否已存在
+                if filename.startswith('submission_') and os.path.exists(dst_file):
+                    # logger.info(f"跳过已存在的文件: {filename}")
+                    skipped_count += 1
+                    return
+                
+                # 其他文件或不存在的submission_*.json文件，执行复制
+                shutil.copy2(src_file, dst_file)
+                copied_count += 1
+                logger.debug(f"复制文件: {filename}")
             
             # 从目录A复制文件
             if dir_a:
@@ -164,8 +197,7 @@ class LeadsInsight:
                     if filename.endswith('.json'):
                         src_file = os.path.join(dir_a, filename)
                         dst_file = os.path.join(self.sales_leads_dir, filename)
-                        shutil.copy2(src_file, dst_file)
-                        copied_count += 1
+                        copy_file_with_check(src_file, dst_file)
             
             # 从目录B复制文件
             if dir_b:
@@ -174,10 +206,9 @@ class LeadsInsight:
                     if filename.endswith('.json'):
                         src_file = os.path.join(dir_b, filename)
                         dst_file = os.path.join(self.sales_leads_dir, filename)
-                        shutil.copy2(src_file, dst_file)
-                        copied_count += 1
+                        copy_file_with_check(src_file, dst_file)
             
-            logger.info(f"成功复制 {copied_count} 个文件到sales_leads目录")
+            logger.info(f"文件处理完成: {copied_count} 个文件已复制, {skipped_count} 个文件已跳过")
             return True
             
         except Exception as e:
@@ -271,6 +302,30 @@ class LeadsInsight:
             if links and isinstance(links, list) and len(links) > 0:
                 submission["view_page_href"] = links[0].get("href", "")
             
+            # 检查是否已同步过：如果存在dingding字段，需要进一步核实
+            dingding_info = data.get('dingding', {})
+            if dingding_info and dingding_info.get('id'):
+                dingtalk_id = dingding_info.get('id')
+                logger.info(f"检测到记录(编号: {post_id})存在钉钉ID: {dingtalk_id}，正在核实钉钉多维表中是否真实存在...")
+                
+                # 调用notable.check_record_exists来核实记录是否真的存在
+                try:
+                    # 获取表格ID和视图ID
+                    table_id = self.notable._ensure_table_id()
+                    sheet_id = self.notable._find_sheet_id(self.target_table_name)
+                    
+                    # 检查记录是否存在
+                    record_exists = self.notable.check_record_exists(table_id, sheet_id, dingtalk_id)
+                    
+                    if record_exists:
+                        submission['dingtalk_id'] = dingtalk_id
+                        logger.info(f"记录(编号: {post_id})在钉钉多维表中确实存在，将跳过同步")
+                    else:
+                        logger.warning(f"记录(编号: {post_id})的钉钉ID {dingtalk_id} 在多维表中不存在，将重新同步")
+                except Exception as e:
+                    logger.error(f"核实记录存在性时出错 (post_id={post_id}): {str(e)}")
+                    logger.warning(f"由于无法核实，记录(编号: {post_id})将被重新同步")
+
             logger.debug(f"成功解析提交文件: submission_{post_id}.json")
             return submission
             
@@ -334,12 +389,19 @@ class LeadsInsight:
                         post_id = record.get('post_id')
                         if post_id:
                             submission = self._parse_submission_file(post_id)
+                            # 如果 submission 文件有效
                             if submission:
+                                # 如果记录已同步过，则记录日志并跳过
+                                if submission.get('dingtalk_id'):
+                                    logger.info(f"记录(编号: {post_id})已同步过 (DingTalk ID: {submission.get('dingtalk_id')})，本次将跳过。")
+                                    continue
+                                
+                                # 合并记录并添加到待处理列表
                                 record.update(submission)
                                 all_records.append(record)
             
             if not all_records:
-                logger.warning("解析文件后，没有找到有效的记录可供同步。")
+                logger.warning("解析文件后，没有找到新的有效记录可供同步。")
                 return True
 
             # 2. 转换为钉钉格式
@@ -352,18 +414,25 @@ class LeadsInsight:
             logger.info(f"开始逐条同步 {len(records_to_process)} 条记录到钉钉 '{self.target_table_name}'...")
 
             for record in records_to_process:
+                fields_id_to_submit = "" # 始终为空，因为我们只处理新增
                 fields_to_submit = record.get("fields", {})
                 if not fields_to_submit:
                     logger.warning(f"发现一条空记录，已跳过: {record}")
                     continue
 
-                record_id, error = self.notable.add_record(self.target_table_name, fields_to_submit)
+                record_id, error = self.notable.add_record(self.target_table_name, fields_to_submit, fields_id_to_submit)
 
                 if error is None and record_id:
                     # 同步成功
                     success_count += 1
                     updated_record = {"id": record_id, "fields": fields_to_submit}
                     logger.info(f"记录(编号: {fields_to_submit.get('编号')})同步成功, ID: {record_id}")
+                    
+                    # 回写ID到submission文件
+                    post_id = fields_to_submit.get('编号')
+                    if post_id:
+                        self._update_submission_file_with_dingtalk_id(post_id, record_id)
+
                 else:
                     # 同步失败
                     failure_count += 1
@@ -371,6 +440,7 @@ class LeadsInsight:
                     logger.error(f"记录(编号: {fields_to_submit.get('编号')})同步失败: {error}")
                 
                 updated_records.append(updated_record)
+                self.countdown(10)
 
             logger.info(f"同步处理完成: {success_count} 条成功, {failure_count} 条失败。")
 
@@ -398,6 +468,40 @@ class LeadsInsight:
             logger.error(f"详细错误: {traceback.format_exc()}")
             return False
     
+    def _update_submission_file_with_dingtalk_id(self, post_id: str, dingtalk_id: str):
+        """
+        将钉钉记录ID更新到对应的submission JSON文件中。
+
+        参数:
+            post_id (str): 帖子ID (即 "编号")。
+            dingtalk_id (str): 钉钉多维表返回的记录ID。
+        """
+        submission_file_path = os.path.join(self.sales_leads_dir, f"submission_{post_id}.json")
+        
+        try:
+            if not os.path.exists(submission_file_path):
+                logger.warning(f"尝试更新ID时未找到submission文件: {submission_file_path}")
+                return
+
+            # 读取现有文件内容
+            with open(submission_file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            # 更新或添加dingding字段
+            data['dingding'] = {
+                "id": dingtalk_id,
+                "编号": post_id
+            }
+
+            # 写回更新后的内容
+            with open(submission_file_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=4)
+            
+            logger.info(f"成功将钉钉ID {dingtalk_id} 更新到文件: {os.path.basename(submission_file_path)}")
+
+        except Exception as e:
+            logger.error(f"更新submission文件 {os.path.basename(submission_file_path)} 失败: {e}")
+
     def _convert_to_notable_format(self, records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         将记录转换为Notable格式
@@ -456,15 +560,13 @@ class LeadsInsight:
             
         except Exception as e:
             logger.error(f"LeadsInsight处理流程出错: {str(e)}")
+            # 在测试期间，将详细错误打印到控制台以方便调试
+            traceback.print_exc()
             return False
 
 # 测试代码
 if __name__ == "__main__":
     try:
-        # 确保日志目录存在
-        if not os.path.exists('logs'):
-            os.makedirs('logs')
-            
         # 创建LeadsInsight实例
         leads_insight = LeadsInsight()
         

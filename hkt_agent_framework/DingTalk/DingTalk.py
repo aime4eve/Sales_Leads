@@ -226,7 +226,7 @@ class DingTalk:
             self.access_token and 
             self.token_expire_time and 
             current_time < self.token_expire_time - timedelta(seconds=self.token_refresh_buffer)):
-            logger.debug("使用缓存的Access Token")
+            logger.info(f"使用缓存的Access Token:{self.access_token}")
             return self.access_token
         
         # 需要获取新的Token
@@ -294,7 +294,7 @@ class DingTalk:
                     except Exception as e:
                         logger.error(f"保存Access Token到配置文件时出错: {str(e)}")
                         # 继续执行，不因保存配置失败而中断主流程
-                    logger.info(f"成功获取Access Token，有效期至：{self.token_expire_time}")
+                    logger.info(f"成功获取Access Token：{self.access_token}")
                     return self.access_token
                 else:
                     logger.error(f"获取Access Token响应格式错误: {result}")

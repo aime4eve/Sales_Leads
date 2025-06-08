@@ -7,8 +7,8 @@
     "message": "登录失败"
   },
   "last_status": "completed",
-  "sync_top_pages": -1,
-  "task_b_start_delay_seconds": 0,
+  "sync_top_pages": 2,
+  "task_b_start_delay_seconds": 10,
   "task_b_interval_minutes": 90,
   "task_c_start_delay_seconds": 120,
   "task_c_interval_minutes": 30,

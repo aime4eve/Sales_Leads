@@ -244,7 +244,7 @@ class Notable:
         """
         return self.dingtalk.ensure_access_token()
     
-    def add_record(self, sheet_name: str, fields: dict, table_id: str = None) -> tuple:
+    def add_record(self, sheet_name: str, fields: dict, fields_id: str = None, table_id: str = None) -> tuple:
         """
         向指定的钉钉多维表添加单条记录。
 
@@ -263,7 +263,21 @@ class Notable:
             # 1. 确保获取table_id和sheet_id
             final_table_id = self._ensure_table_id(table_id)
             sheet_id = self._find_sheet_id(sheet_name)
-            
+
+            # 幂等性检查：如果提供了fields_id，则先检查记录是否存在
+            if fields_id:
+                # 调用get_table_record_byid进行存在性检查
+                record = self.get_table_record_byid(final_table_id, sheet_name, fields_id)
+                if record and record.get("id") == fields_id:
+                    # 记录已存在，记录日志并返回，终止后续操作
+                    logger.info(f"记录 '{fields_id}' 在表格 '{sheet_name}' 中已存在，跳过新增操作。")
+                    return record.get("id"), f"记录 {fields_id} 已存在"
+                else:
+                    # 记录不存在，继续执行新增流程
+                    logger.info(f"记录 '{fields_id}' 不存在，将执行新增操作。")
+                    # 可选的短暂延时，以防API频率问题
+                    time.sleep(0.5)
+
             # 2. 准备API请求参数
             url_template = self.dingtalk.set_notable_records_url
             if not url_template:
@@ -993,7 +1007,7 @@ class Notable:
                 return False
             
             records = data.get('records', [])
-            total_records = data.get('totalRecords', 0)
+            total_records = len(records) # 使用实际记录数作为总数
             
             if not records:
                 logger.warning("没有记录需要设置")
@@ -1005,66 +1019,58 @@ class Notable:
             # 确保有有效的table_id
             table_id = self._ensure_table_id(table_id)
             
-            # 获取access token
-            access_token = self.ensure_access_token()
-            
-            # 准备请求URL
-            url_template = self.dingtalk.set_notable_records_url
-            if not url_template:
-                raise ValueError("钉钉配置中缺少'set_notable_records' URL")
-
-            # 使用与get_table_records一致的占位符
-            url = url_template.replace("{table_id}", table_id).replace("{sheetname}", sheet_id).replace("{unionid}", self.dingtalk.operator_id)
-
-            # 准备请求头
-            headers = {
-                'Content-Type': 'application/json',
-                'x-acs-dingtalk-access-token': access_token
-            }
-            with tqdm(total=total_records, desc="同步钉钉多维表", unit="条") as pbar:
+            # 使用tqdm创建进度条
+            with tqdm(total=total_records, desc=f"同步'{sheet_name}'", unit="条",leave=False) as pbar:
                 for record in records:
-                    # 逐条更新记录
-                    # 准备请求数据
-                    payload = {
-                        "records": [
-                            {
-                            "fields": record.get("fields", {})
-                            }
-                        ]
-                    }
-                    # 验证payload格式是否符合钉钉API要求
-                    if not all(isinstance(record.get("fields", {}), dict) for record in payload.get("records", [])):
-                        error_msg = f"记录格式不正确: {payload}"
-                        logger.error(error_msg)
-                        self._save_failed_record(record, error_msg, sheet_name)
-                        pbar.update(1)
-                        continue
-                    
                     try:
-                        # 发送请求
-                        response = requests.post(url, headers=headers, json=payload)
-                        response.raise_for_status()
-                        result = response.json()
-                        if result.get('value', [{}])[0].get('id') is not None:  
-                            logger.info(f"成功设置 {result.get('value', [{}])[0].get('id')} 记录")
-                        else:
-                            # 记录同步失败的数据
-                            error_msg = f"设置记录失败: {result}"
-                            logger.error(error_msg)
-                            self._save_failed_record(record, error_msg, sheet_name)
-                        pbar.update(1)
-                        countdown(10)
-                        # time.sleep(3)               
+                        # 从文件记录中提取ID和字段
+                        record_id = record.get("id")
+                        fields_data = record.get("fields", {})
+
+                        if not record_id:
+                            warning_msg = f"记录缺少'id'字段，无法进行存在性检查，跳过此记录: {record}"
+                            logger.warning(warning_msg)
+                            self._save_failed_record(record, warning_msg, sheet_name)
+                            pbar.update(1)
+                            continue
+
+                        # 调用强化后的 add_record 方法进行处理
+                        created_id, message = self.add_record(
+                            sheet_name=sheet_name,
+                            fields=fields_data,
+                            fields_id=record_id,
+                            table_id=table_id
+                        )
+
+                        # 根据返回结果更新进度条和日志
+                        if message:
+                            if "已存在" in message:
+                                pbar.set_postfix_str("已存在, 跳过")
+                            else: # 如果有消息但不是"已存在"，则视为错误
+                                logger.error(f"处理记录 {record_id} 失败: {message}")
+                                self._save_failed_record(record, message, sheet_name)
+                                pbar.set_postfix_str("失败")
+                        elif created_id:
+                            pbar.set_postfix_str("成功")
+                        
                     except Exception as e:
-                        error_msg = f"设置记录失败: {str(e)}"
+                        # 捕获循环内的意外异常，确保主循环不会中断
+                        error_msg = f"处理记录 {record.get('id', '未知ID')} 时发生意外错误: {str(e)}"
                         logger.error(error_msg)
+                        logger.error(traceback.format_exc())
                         self._save_failed_record(record, error_msg, sheet_name)
+                        pbar.set_postfix_str("异常")
+                    
+                    finally:
+                        # 无论成功、失败还是跳过，都更新进度条
                         pbar.update(1)
-                        continue
+                        # 保留适当的延时，避免触发API限流
+                        time.sleep(1) # 增加延时到1秒
                                       
             return True
         except Exception as e:
-            logger.error(f"设置记录时出错: {str(e)}")
+            logger.error(f"设置表格 '{sheet_name}' 记录时发生严重错误: {str(e)}")
+            logger.error(traceback.format_exc())
             return False
 
     def _ensure_table_id(self, table_id=None):
@@ -1082,6 +1088,5 @@ class Notable:
         """
         if not table_id:
             table_id = self.dingtalk.notable_id
-            logger.info(f"使用配置中的默认多维表ID: {table_id}")
         return table_id
                 
