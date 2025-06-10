@@ -737,28 +737,8 @@ class LeadsInsight:
         notable_records = []
         for record in records:
             # 构建fields对象
-            '''
-            # 提取表单提交信息
-            form_submission = data.get("form_submission", {})
-            submission["first_name"] = form_submission.get("First Name", "")
-            submission["last_name"] = form_submission.get("Last Name", "")
-            submission["email"] = form_submission.get("Email Address", "")
-            submission["phone"] = form_submission.get("WhatsApp/Phone NO.", "")
-            submission["country"] = form_submission.get("Country", "")
-            submission["postcode"] = form_submission.get("Postcode", "")
-            submission["message"] = form_submission.get("Message", "")
-            submission["date_of_submission"] = form_submission.get("Date of Submission", "")
-            
-            # 提取额外信息
-            extra_information = data.get("extra_information", {})
-            submitted_on = extra_information.get("Submitted On", {})
-            links = submitted_on.get("links", [])
-            
-            if links and isinstance(links, list) and len(links) > 0:
-                submission["view_page_href"] = links[0].get("href", "")
-            '''
             fields = {
-                "编号":record.get("post_id",""),
+                "编号": record.get("post_id", ""),
                 "客户": record.get("customer_name", ""),
                 "留言日期": record.get("date_of_submission", ""),
                 "电子邮件": record.get("email", ""),
@@ -770,11 +750,20 @@ class LeadsInsight:
                 "留言位置": record.get("view_page_href", "")
             }
             
-            dingtalk_submission_file = os.path.join(self.dingtalk_sales_leads_dir, f"submission_{record.get('post_id', '')}.json")
-            with open(dingtalk_submission_file, 'r', encoding='utf-8') as f:
-                dingtalk_submission_data = json.load(f)
-            dingtalk_id = dingtalk_submission_data.get('dingding', {}).get('id', "")
-            # dingtalk_id = record.get("dingtalk_id", "")
+            # 尝试从dingtalk_sales_leads目录获取dingtalk_id
+            dingtalk_id = ""
+            post_id = record.get("post_id", "")
+            if post_id:
+                dingtalk_submission_file = os.path.join(self.dingtalk_sales_leads_dir, f"submission_{post_id}.json")
+                try:
+                    if os.path.exists(dingtalk_submission_file):
+                        with open(dingtalk_submission_file, 'r', encoding='utf-8') as f:
+                            dingtalk_submission_data = json.load(f)
+                            dingtalk_id = dingtalk_submission_data.get('dingding', {}).get('id', "")
+                    
+                except Exception as e:
+                    logger.warning(f"读取submission文件失败 (post_id: {post_id}): {str(e)}")
+                    # 继续处理，使用空的dingtalk_id
            
             # 添加到记录列表
             notable_records.append({
@@ -795,15 +784,15 @@ class LeadsInsight:
             logger.info("开始执行LeadsInsight处理流程")
             
             # 步骤1: 整理网页内容
-            # copy_result = self.copy_files_to_hktlora_sales_leads()
-            # if not copy_result:
-            #     logger.error("步骤1失败: 无法整理网页内容")
-            #     return False
+            copy_result = self.copy_files_to_hktlora_sales_leads()
+            if not copy_result:
+                logger.error("步骤1失败: 无法整理网页内容")
+                return False
                 
             # 检查是否有文件被复制
-            # if hasattr(copy_result, 'copied_count') and copy_result.copied_count == 0:
-            #     logger.info("【执行状态】本次运行没有新的销售线索需要同步")
-            #     return True
+            if hasattr(copy_result, 'copied_count') and copy_result.copied_count == 0:
+                logger.info("【执行状态】本次运行没有新的销售线索需要同步")
+                return True
             
             # 步骤2: 将网页内容同步到钉钉多维表
             if not self.sync_to_dingtalk():
@@ -811,11 +800,11 @@ class LeadsInsight:
                 return False
             
             # 步骤3: 删除hktlora_sales_leads目录中的submission_*.json文件和Elementor_DB_*.json文件
-            # if not self.delete_files_in_hktlora_sales_leads():
-            #     logger.error("步骤3失败: 无法删除hktlora_sales_leads目录中的文件")
-            #     return False
+            if not self.delete_files_in_hktlora_sales_leads():
+                logger.error("步骤3失败: 无法删除hktlora_sales_leads目录中的文件")
+                return False
                 
-            # logger.info("【执行状态】销售线索同步流程执行完成")
+            logger.info("【执行状态】销售线索同步流程执行完成")
             return True
             
         except Exception as e:

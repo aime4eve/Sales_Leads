@@ -117,10 +117,10 @@ class DingTalk:
                 # 尝试多个可能的配置文件位置
                 possible_paths = [
                     # 当前目录
-                    'config.json',
+                    'dingtalk_config.json',
                     # 项目根目录
                     os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'dingtalk_config.json'),
-                    # cost_estimate目录
+                    # DingTalk目录
                     os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dingtalk_config.json')
                 ]
                 
@@ -271,9 +271,9 @@ class DingTalk:
                     # expireIn单位为秒，计算过期时间
                     expire_seconds = int(result['expireIn'])
                     self.token_expire_time = current_time + timedelta(seconds=expire_seconds) 
-                    # 将获取的token和过期时间保存到config.json文件中
+                    # 将获取的token和过期时间保存到dingtalk_config.json文件中
                     try:
-                        config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
+                        config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dingtalk_config.json')
                         if os.path.exists(config_path):
                             with open(config_path, 'r', encoding='utf-8') as f:
                                 config_data = json.load(f)

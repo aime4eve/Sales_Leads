@@ -254,6 +254,7 @@ class Notable:
         参数:
             sheet_name (str): 目标表格的名称。
             fields (dict): 包含记录字段的字典。
+            fields_id (str, optional): 记录的ID，用于幂等性检查。如果提供，将检查记录是否存在。
             table_id (str, optional): 多维表的ID。如果为None，则从配置中自动获取。
 
         返回:
@@ -266,6 +267,15 @@ class Notable:
 
             # 设置默认的API调用方法
             call_api_method = 'POST'
+            
+            # 初始化默认的json_data结构
+            json_data = {
+                "records": [
+                    {
+                        "fields": fields
+                    }
+                ]
+            }
 
             # 幂等性检查：如果提供了fields_id，则先检查记录是否存在
             if fields_id:
@@ -275,25 +285,12 @@ class Notable:
                     # 记录已存在
                     logger.info(f"记录 '{fields_id}' 已存在，将执行更新操作。")
                     call_api_method = 'PUT'
-                    json_data = {
-                        "records": [
-                            {
-                                "id": fields_id,
-                                "fields": fields
-                            }
-                        ]
-                    }
+                    # 更新json_data，添加id字段
+                    json_data["records"][0]["id"] = fields_id
                 else:
                     # 记录不存在
                     logger.info(f"记录 '{fields_id}' 不存在，将执行新增操作。")
-                    json_data = {
-                        "records": [
-                            {
-                                "fields": fields
-                            }
-                        ]
-                    }
-                    # call_api_method 保持默认值 'POST'
+                    # 使用默认的json_data结构
                 # 可选的短暂延时，以防API频率问题
                 time.sleep(0.5)
 
