@@ -9,24 +9,126 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 import traceback
 import sys
 import time
+import stat
+from logging.handlers import RotatingFileHandler
+from log_cleaner import LogCleaner
+from log_checker import LogChecker
+
+def setup_logging():
+    """
+    设置和初始化日志系统
+    包含权限检查、文件系统检查、日志轮转配置和清理机制
+    """
+    log_dir = 'logs'
+    log_file = os.path.join(log_dir, 'leads_insight.log')
+    
+    # 确保日志目录存在并有正确的权限
+    try:
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+            # 设置目录权限为755 (rwxr-xr-x)
+            os.chmod(log_dir, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
+    except Exception as e:
+        print(f"创建日志目录失败: {str(e)}")
+        sys.exit(1)
+
+    # 检查日志文件权限
+    try:
+        # 如果日志文件不存在，创建它
+        if not os.path.exists(log_file):
+            with open(log_file, 'a') as f:
+                pass
+            # 设置文件权限为644 (rw-r--r--)
+            os.chmod(log_file, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
+        
+        # 测试文件是否可写
+        try:
+            with open(log_file, 'a') as f:
+                f.write("")
+        except IOError as e:
+            print(f"日志文件不可写: {str(e)}")
+            sys.exit(1)
+    except Exception as e:
+        print(f"设置日志文件失败: {str(e)}")
+        sys.exit(1)
+
+    # 配置日志记录
+    try:
+        # 创建日志格式化器
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+
+        # 创建RotatingFileHandler
+        # 设置单个日志文件最大为10MB
+        # 保留最近的5个日志文件
+        file_handler = RotatingFileHandler(
+            log_file,
+            maxBytes=10*1024*1024,  # 10MB
+            backupCount=5,
+            encoding='utf-8'
+        )
+        file_handler.setFormatter(formatter)
+
+        # 创建控制台处理器
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+
+        # 获取根日志记录器
+        root_logger = logging.getLogger()
+        root_logger.setLevel(logging.INFO)
+
+        # 移除所有现有的处理器
+        for handler in root_logger.handlers[:]:
+            root_logger.removeHandler(handler)
+
+        # 添加新的处理器
+        root_logger.addHandler(file_handler)
+        root_logger.addHandler(console_handler)
+
+        # 获取LeadsInsight日志记录器
+        logger = logging.getLogger("LeadsInsight")
+        logger.info("日志系统初始化成功")
+        logger.info(f"日志文件路径: {log_file}")
+        logger.info("日志轮转配置: 单个文件最大10MB，保留最近5个文件")
+        
+        # 初始化并运行日志清理器
+        try:
+            cleaner = LogCleaner(log_dir=log_dir, retention_days=30)
+            disk_usage = cleaner.get_disk_usage()
+            if disk_usage is not None:
+                logger.info(f"当前日志目录使用空间: {disk_usage:.2f}MB")
+            
+            if cleaner.clean_old_logs():
+                logger.info("日志清理完成")
+            else:
+                logger.warning("日志清理过程中出现错误")
+        except Exception as e:
+            logger.error(f"运行日志清理器时出错: {str(e)}")
+
+        # 执行日志系统健康检查
+        try:
+            checker = LogChecker(log_dir=log_dir)
+            health_status = checker.perform_health_check()
+            
+            if health_status["is_healthy"]:
+                logger.info("日志系统健康检查通过")
+            else:
+                logger.warning("日志系统健康检查发现问题")
+                logger.warning(f"健康检查详细报告: {json.dumps(health_status, ensure_ascii=False, indent=2)}")
+        except Exception as e:
+            logger.error(f"执行日志系统健康检查时出错: {str(e)}")
+        
+        return logger
+    except Exception as e:
+        print(f"配置日志系统失败: {str(e)}")
+        sys.exit(1)
+
+# 初始化日志系统
+logger = setup_logging()
 
 # 导入Notable类
 from hkt_agent_framework.DingTalk.Notable import Notable
-
-# 在配置日志之前，确保日志目录存在
-if not os.path.exists('logs'):
-    os.makedirs('logs')
-
-# 配置日志记录
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler("logs/leads_insight.log", encoding='utf-8'),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger("LeadsInsight")
 
 class LeadsInsight:
     """
@@ -50,14 +152,20 @@ class LeadsInsight:
             target_table_name (str): 目标表格名称，默认为"资源池"
         """
         self.elementor_db_dir = elementor_db_dir
-        self.sales_leads_dir = os.path.join(elementor_db_dir, "sales_leads")
+        self.hktlora_sales_leads_dir = os.path.join(elementor_db_dir, "hktlora_sales_leads")
+        self.dingtalk_sales_leads_dir = os.path.join(elementor_db_dir, "dingtalk_sales_leads")
         self.target_table_name = target_table_name
         
-        # 确保sales_leads目录存在
-        if not os.path.exists(self.sales_leads_dir):
-            os.makedirs(self.sales_leads_dir)
-            logger.info(f"创建sales_leads目录: {self.sales_leads_dir}")
+        # 确保hktlora_sales_leads目录存在
+        if not os.path.exists(self.hktlora_sales_leads_dir):
+            os.makedirs(self.hktlora_sales_leads_dir)
+            logger.info(f"创建hktlora_sales_leads目录: {self.hktlora_sales_leads_dir}")
         
+        # 确保dingtalk_sales_leads目录存在
+        if not os.path.exists(self.dingtalk_sales_leads_dir):
+            os.makedirs(self.dingtalk_sales_leads_dir)
+            logger.info(f"创建dingtalk_sales_leads目录: {self.dingtalk_sales_leads_dir}")
+
         # 初始化Notable对象，用于同步数据到钉钉
         try:
             # 如果没有指定配置文件路径，使用默认路径
@@ -122,9 +230,9 @@ class LeadsInsight:
                 if re.match(pattern, d):
                     try:
                         # 从目录名中提取日期时间部分
-                        if pattern == r'^(\d{8}_\d{6})$':
+                        if pattern == r"\d{8}_\d{6}":
                             dt_str = d
-                        elif pattern == r'^retry_(\d{8}_\d{6})$':
+                        elif pattern == r"retry_\d{8}_\d{6}":
                             dt_str = d[6:]  # 移除"retry_"前缀
                         else:
                             continue
@@ -150,69 +258,103 @@ class LeadsInsight:
             logger.error(f"查找最新目录时出错: {str(e)}")
             return None
     
-    def copy_files_to_sales_leads(self) -> bool:
+    def delete_files_in_hktlora_sales_leads(self) -> bool:
         """
-        将最新目录中的JSON文件复制到sales_leads目录。
-        对于submission_*.json文件，如果目标目录已存在则跳过复制。
-        对于其他JSON文件（如Elementor_DB_*.json），仍然执行覆盖复制。
+        删除hktlora_sales_leads目录中的submission_*.json文件和Elementor_DB_*.json文件
+        """
+        try:
+            
+            for file in os.listdir(self.hktlora_sales_leads_dir):
+                # 删除hktlora_sales_leads目录中的submission_*.json文件
+                if file.startswith('submission_'):
+                    os.remove(os.path.join(self.hktlora_sales_leads_dir, file))
+                # 删除hktlora_sales_leads目录中的Elementor_DB_*.json文件
+                if file.startswith('Elementor_DB_'):
+                    os.remove(os.path.join(self.hktlora_sales_leads_dir, file))
+
+            # 删除elementor_db_sync目录中的retry_*目录下所有文件
+            for item in os.listdir(self.elementor_db_dir):
+                item_path = os.path.join(self.elementor_db_dir, item)
+                if item.startswith('retry_') and os.path.isdir(item_path):
+                    for file in os.listdir(item_path):
+                        file_path = os.path.join(item_path, file)
+                        if os.path.isfile(file_path):
+                            os.remove(file_path)
+                    logger.debug(f"已清空目录: {item_path}")
+
+            return True
+        except Exception as e:
+            logger.error(f"删除{self.elementor_db_dir}目录中的 submission_*.json文件\Elementor_DB_*.json文件\retry_*目录下所有文件时出错: {str(e)}")
+            return False
+    
+    def copy_files_to_hktlora_sales_leads(self) -> bool:
+        """
+        将最新的文件复制到hktlora_sales_leads目录
         
         返回:
             bool: 操作是否成功
         """
         try:
-            # 查找最新的常规目录
-            dir_a = self._find_latest_directory(self.elementor_db_dir, r'^(\d{8}_\d{6})$')
+            # 找到最新的目录
+            latest_dir = self._find_latest_directory(self.elementor_db_dir, r"\d{8}_\d{6}")
+            retry_dir = self._find_latest_directory(self.elementor_db_dir, r"retry_\d{8}_\d{6}")
             
-            # 查找最新的重试目录
-            dir_b = self._find_latest_directory(self.elementor_db_dir, r'^retry_(\d{8}_\d{6})$')
+            if latest_dir:
+                logger.info(f"找到最新的目录: {latest_dir}")
+            if retry_dir:
+                logger.info(f"找到最新的目录: {retry_dir}")
             
-            # 如果两个目录都未找到，则返回失败
-            if not dir_a and not dir_b:
-                logger.error("未找到任何有效的数据目录")
-                return False
+            if not latest_dir and not retry_dir:
+                logger.warning("没有找到可用的源目录")
+                return True  # 返回True因为这是正常的状态
             
-            # 跟踪复制文件的数量
+            # 统计复制的文件数量
             copied_count = 0
             skipped_count = 0
             
-            def copy_file_with_check(src_file: str, dst_file: str):
-                nonlocal copied_count, skipped_count
-                filename = os.path.basename(src_file)
-                
-                # 对于submission_*.json文件，检查是否已存在
-                if filename.startswith('submission_') and os.path.exists(dst_file):
-                    # logger.info(f"跳过已存在的文件: {filename}")
-                    skipped_count += 1
-                    return
-                
-                # 其他文件或不存在的submission_*.json文件，执行复制
-                shutil.copy2(src_file, dst_file)
-                copied_count += 1
-                logger.debug(f"复制文件: {filename}")
-            
             # 从目录A复制文件
-            if dir_a:
-                logger.info(f"从目录A复制文件: {dir_a}")
-                for filename in os.listdir(dir_a):
-                    if filename.endswith('.json'):
-                        src_file = os.path.join(dir_a, filename)
-                        dst_file = os.path.join(self.sales_leads_dir, filename)
-                        copy_file_with_check(src_file, dst_file)
+            if latest_dir:
+                logger.info(f"从目录A复制文件: {latest_dir}")
+                for file in os.listdir(latest_dir):
+                    if file.startswith(('Elementor_DB_', 'submission_')) and file.endswith('.json'):
+                        src_file = os.path.join(latest_dir, file)
+                        dst_file = os.path.join(self.hktlora_sales_leads_dir, file)
+                        if os.path.exists(dst_file) and os.path.getmtime(src_file) <= os.path.getmtime(dst_file):
+                            skipped_count += 1
+                            continue
+                        shutil.copy2(src_file, dst_file)
+                        copied_count += 1
             
             # 从目录B复制文件
-            if dir_b:
-                logger.info(f"从目录B复制文件: {dir_b}")
-                for filename in os.listdir(dir_b):
-                    if filename.endswith('.json'):
-                        src_file = os.path.join(dir_b, filename)
-                        dst_file = os.path.join(self.sales_leads_dir, filename)
-                        copy_file_with_check(src_file, dst_file)
+            if retry_dir:
+                logger.info(f"从目录B复制文件: {retry_dir}")
+                for file in os.listdir(retry_dir):
+                    if file.startswith(('Elementor_DB_', 'submission_')) and file.endswith('.json'):
+                        src_file = os.path.join(retry_dir, file)
+                        dst_file = os.path.join(self.hktlora_sales_leads_dir, file)
+                        if os.path.exists(dst_file) and os.path.getmtime(src_file) <= os.path.getmtime(dst_file):
+                            skipped_count += 1
+                            continue
+                        shutil.copy2(src_file, dst_file)
+                        copied_count += 1
             
             logger.info(f"文件处理完成: {copied_count} 个文件已复制, {skipped_count} 个文件已跳过")
-            return True
+            
+            # 创建一个包含统计信息的对象
+            class CopyResult:
+                def __init__(self, success: bool, copied: int, skipped: int):
+                    self.success = success
+                    self.copied_count = copied
+                    self.skipped_count = skipped
+                
+                def __bool__(self):
+                    return self.success
+            
+            return CopyResult(True, copied_count, skipped_count)
             
         except Exception as e:
-            logger.error(f"复制文件到sales_leads目录时出错: {str(e)}")
+            logger.error(f"复制文件时出错: {str(e)}")
+            logger.error(f"详细错误: {traceback.format_exc()}")
             return False
     
     def _parse_elementor_db_file(self, elementor_file_path: str) -> List[Dict[str, Any]]:
@@ -272,7 +414,7 @@ class LeadsInsight:
             Dict: 解析后的记录，如果文件不存在或解析失败则返回空字典
         """
         try:
-            submission_file = os.path.join(self.sales_leads_dir, f"submission_{post_id}.json")
+            submission_file = os.path.join(self.hktlora_sales_leads_dir, f"submission_{post_id}.json")
             
             if not os.path.exists(submission_file):
                 logger.warning(f"提交文件不存在: {submission_file}")
@@ -285,10 +427,22 @@ class LeadsInsight:
             
             # 提取表单提交信息
             form_submission = data.get("form_submission", {})
-            submission["first_name"] = form_submission.get("First Name", "")
-            submission["last_name"] = form_submission.get("Last Name", "")
-            submission["email"] = form_submission.get("Email Address", "")
-            submission["phone"] = form_submission.get("WhatsApp/Phone NO.", "")
+            
+            if form_submission.get("Name"):
+                submission["customer_name"] = form_submission.get("Name", "")
+            else:
+                submission["customer_name"] = form_submission.get("First Name", "") + " " + form_submission.get("Last Name", "")
+
+            if form_submission.get("Email Address"):
+                submission["email"] = form_submission.get("Email Address", "")
+            else:
+                submission["email"] = form_submission.get("Email", "")
+
+            if form_submission.get("WhatsApp"):
+                submission["phone"] = form_submission.get("WhatsApp", "")
+            else:
+                submission["phone"] = form_submission.get("WhatsApp/Phone NO.", "")
+            
             submission["country"] = form_submission.get("Country", "")
             submission["postcode"] = form_submission.get("Postcode", "")
             submission["message"] = form_submission.get("Message", "")
@@ -305,26 +459,26 @@ class LeadsInsight:
             # 检查是否已同步过：如果存在dingding字段，需要进一步核实
             dingding_info = data.get('dingding', {})
             if dingding_info and dingding_info.get('id'):
-                dingtalk_id = dingding_info.get('id')
-                logger.info(f"检测到记录(编号: {post_id})存在钉钉ID: {dingtalk_id}，正在核实钉钉多维表中是否真实存在...")
+                submission['dingtalk_id'] = dingding_info.get('id')
+                # logger.info(f"检测到记录(编号: {post_id})存在钉钉ID: {dingtalk_id}，正在核实钉钉多维表中是否真实存在...")
                 
                 # 调用notable.check_record_exists来核实记录是否真的存在
-                try:
-                    # 获取表格ID和视图ID
-                    table_id = self.notable._ensure_table_id()
-                    sheet_id = self.notable._find_sheet_id(self.target_table_name)
+                # try:
+                #     # 获取表格ID和视图ID
+                #     table_id = self.notable._ensure_table_id()
+                #     sheet_id = self.notable._find_sheet_id(self.target_table_name)
                     
-                    # 检查记录是否存在
-                    record_exists = self.notable.check_record_exists(table_id, sheet_id, dingtalk_id)
+                #     # 检查记录是否存在
+                #     record_exists = self.notable.check_record_exists(table_id, sheet_id, dingtalk_id)
                     
-                    if record_exists:
-                        submission['dingtalk_id'] = dingtalk_id
-                        logger.info(f"记录(编号: {post_id})在钉钉多维表中确实存在，将跳过同步")
-                    else:
-                        logger.warning(f"记录(编号: {post_id})的钉钉ID {dingtalk_id} 在多维表中不存在，将重新同步")
-                except Exception as e:
-                    logger.error(f"核实记录存在性时出错 (post_id={post_id}): {str(e)}")
-                    logger.warning(f"由于无法核实，记录(编号: {post_id})将被重新同步")
+                #     if record_exists:
+                #         submission['dingtalk_id'] = dingtalk_id
+                #         logger.info(f"记录(编号: {post_id})在钉钉多维表中确实存在，将跳过同步")
+                #     else:
+                #         logger.warning(f"记录(编号: {post_id})的钉钉ID {dingtalk_id} 在多维表中不存在，将重新同步")
+                # except Exception as e:
+                #     logger.error(f"核实记录存在性时出错 (post_id={post_id}): {str(e)}")
+                #     logger.warning(f"由于无法核实，记录(编号: {post_id})将被重新同步")
 
             logger.debug(f"成功解析提交文件: submission_{post_id}.json")
             return submission
@@ -376,92 +530,160 @@ class LeadsInsight:
         """
         try:
             # 1. 获取并解析源数据文件
-            json_files = [f for f in os.listdir(self.sales_leads_dir) if f.endswith('.json')]
+            json_files = [f for f in os.listdir(self.hktlora_sales_leads_dir) if f.endswith('.json')]
             if not json_files:
-                logger.warning("sales_leads目录中没有找到JSON文件可供同步。")
+                logger.info("【同步状态】hktlora_sales_leads目录中没有找到JSON文件，本次无需同步。")
                 return True # 认为这是一个成功的状态，因为没有工作要做
 
+            elementor_files = [f for f in json_files if f.startswith('Elementor_DB_')]
+            if not elementor_files:
+                logger.info("【同步状态】没有找到Elementor_DB_*.json文件，本次无需同步。")
+                return True
+
+            # 确保dingtalk_success.json和dingtalk_failure.json文件存在
+            success_file = os.path.join(self.hktlora_sales_leads_dir, "dingtalk_success.json")
+            failure_file = os.path.join(self.hktlora_sales_leads_dir, "dingtalk_failure.json")
+            
+            # 如果文件不存在，创建空的JSON数组文件
+            if not os.path.exists(success_file):
+                with open(success_file, 'w', encoding='utf-8') as f:
+                    json.dump([], f, ensure_ascii=False, indent=4)
+            if not os.path.exists(failure_file):
+                with open(failure_file, 'w', encoding='utf-8') as f:
+                    json.dump([], f, ensure_ascii=False, indent=4)
+
+            # 读取现有的成功和失败记录
+            try:
+                with open(success_file, 'r', encoding='utf-8') as f:
+                    success_records = json.load(f)
+            except json.JSONDecodeError:
+                logger.warning(f"dingtalk_success.json 格式错误，将重置为空数组")
+                success_records = []
+            
+            try:
+                with open(failure_file, 'r', encoding='utf-8') as f:
+                    failure_records = json.load(f)
+            except json.JSONDecodeError:
+                logger.warning(f"dingtalk_failure.json 格式错误，将重置为空数组")
+                failure_records = []
+
+            # 创建一个编号到ID的映射字典，用于快速查找
+            post_id_to_dingtalk_id = {}
+            for record in success_records:
+                if "fields" in record and "编号" in record["fields"]:
+                    post_id = record["fields"]["编号"]
+                    post_id_to_dingtalk_id[post_id] = record["id"]
+
             all_records = []
-            for json_file in json_files:
-                if json_file.startswith('Elementor_DB_'):
-                    elementor_records = self._parse_elementor_db_file(os.path.join(self.sales_leads_dir, json_file))
-                    for record in elementor_records:
-                        post_id = record.get('post_id')
-                        if post_id:
-                            submission = self._parse_submission_file(post_id)
-                            # 如果 submission 文件有效
-                            if submission:
-                                # 如果记录已同步过，则记录日志并跳过
-                                if submission.get('dingtalk_id'):
-                                    logger.info(f"记录(编号: {post_id})已同步过 (DingTalk ID: {submission.get('dingtalk_id')})，本次将跳过。")
-                                    continue
-                                
-                                # 合并记录并添加到待处理列表
-                                record.update(submission)
-                                all_records.append(record)
+            for json_file in elementor_files:
+                elementor_records = self._parse_elementor_db_file(os.path.join(self.hktlora_sales_leads_dir, json_file))
+                for record in elementor_records:
+                    post_id = record.get('post_id')
+                    if post_id:
+                        submission = self._parse_submission_file(post_id)
+                        # 如果 submission 文件有效
+                        if submission:
+                            # 如果记录已同步过，则记录日志并跳过
+                            # if submission.get('dingtalk_id'):
+                            #     logger.info(f"记录(编号: {post_id})已同步过 (DingTalk ID: {submission.get('dingtalk_id')})，本次将跳过。")
+                            #     continue
+                            
+                            # 合并记录并添加到待处理列表
+                            record.update(submission)
+                            all_records.append(record)
             
             if not all_records:
-                logger.warning("解析文件后，没有找到新的有效记录可供同步。")
+                logger.info("【同步状态】解析文件后发现所有记录都已同步，本次无需同步。")
                 return True
 
             # 2. 转换为钉钉格式
             records_to_process = self._convert_to_notable_format(all_records)
             
             # 3. 逐条处理并记录结果
-            updated_records = []
             success_count = 0
             failure_count = 0
-            logger.info(f"开始逐条同步 {len(records_to_process)} 条记录到钉钉 '{self.target_table_name}'...")
+            logger.info(f"【同步状态】开始同步 {len(records_to_process)} 条新记录到钉钉 '{self.target_table_name}' 多维表...")
 
             for record in records_to_process:
-                fields_id_to_submit = "" # 始终为空，因为我们只处理新增
+                fields_id_to_submit = record.get("id", "")
                 fields_to_submit = record.get("fields", {})
                 if not fields_to_submit:
                     logger.warning(f"发现一条空记录，已跳过: {record}")
                     continue
 
-                record_id, error = self.notable.add_record(self.target_table_name, fields_to_submit, fields_id_to_submit)
+                # 从映射字典中查找对应的钉钉记录ID
+                if fields_id_to_submit:
+                    logger.info(f"在dingtalk_success.json中找到对应的钉钉记录ID: {fields_id_to_submit}")
+                else:
+                    post_id = fields_to_submit.get("编号")  
+                    fields_id_to_submit = post_id_to_dingtalk_id.get(post_id, "")
+                    logger.info(f"在dingtalk_success.json中没有找到对应的钉钉记录ID: {fields_id_to_submit}")
 
-                if error is None and record_id:
+                record_id, error = self.notable.add_record(self.target_table_name, fields=fields_to_submit, fields_id=fields_id_to_submit)
+
+                if record_id:
                     # 同步成功
                     success_count += 1
                     updated_record = {"id": record_id, "fields": fields_to_submit}
                     logger.info(f"记录(编号: {fields_to_submit.get('编号')})同步成功, ID: {record_id}")
                     
+                    # 检查dingtalk_success.json文件大小
+                    if os.path.getsize(success_file) > 5 * 1024 * 1024:
+                        # 如果文件大于5MB，重命名并创建新文件
+                        new_name = os.path.join(
+                            self.hktlora_sales_leads_dir, 
+                            f"dingtalk_success_{time.strftime('%Y%m%d_%H%M%S')}.json"
+                        )
+                        os.rename(success_file, new_name)
+                        success_records = []
+
+                    # 添加新记录到数组
+                    success_records.append(updated_record)
+                    
+                    # 将更新后的数组写入文件
+                    with open(success_file, "w", encoding="utf-8") as f:
+                        json.dump(success_records, f, ensure_ascii=False, indent=4)
+
                     # 回写ID到submission文件
                     post_id = fields_to_submit.get('编号')
                     if post_id:
                         self._update_submission_file_with_dingtalk_id(post_id, record_id)
-
+                        # 将同步成功的submission文件移动到dingtalk_sales_leads目录中
+                        try:
+                            shutil.move(
+                                    os.path.join(self.hktlora_sales_leads_dir, f"submission_{post_id}.json"), 
+                                    os.path.join(self.dingtalk_sales_leads_dir, f"submission_{post_id}.json")
+                                )
+                        except Exception as e:
+                            logger.error(f"移动submission文件时出错: {str(e)}")
                 else:
                     # 同步失败
                     failure_count += 1
                     updated_record = {"error": str(error), "fields": fields_to_submit}
                     logger.error(f"记录(编号: {fields_to_submit.get('编号')})同步失败: {error}")
+                    
+                    # 检查dingtalk_failure.json文件大小
+                    if os.path.getsize(failure_file) > 5 * 1024 * 1024:
+                        # 如果文件大于5MB，重命名并创建新文件
+                        new_name = os.path.join(
+                            self.hktlora_sales_leads_dir, 
+                            f"dingtalk_failure_{time.strftime('%Y%m%d_%H%M%S')}.json"
+                        )
+                        os.rename(failure_file, new_name)
+                        failure_records = []
+
+                    # 添加新记录到数组
+                    failure_records.append(updated_record)
+                    
+                    # 将更新后的数组写入文件
+                    with open(failure_file, "w", encoding="utf-8") as f:
+                        json.dump(failure_records, f, ensure_ascii=False, indent=4)
                 
-                updated_records.append(updated_record)
                 self.countdown(10)
 
             logger.info(f"同步处理完成: {success_count} 条成功, {failure_count} 条失败。")
-
-            # 4. 将最终结果（包含id和error）写入文件
-            output_file = f"{self.target_table_name}.json"
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            output_path = os.path.join(current_dir, "notable", output_file)
             
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            
-            final_data = {
-                "totalRecords": len(updated_records),
-                "records": updated_records
-            }
-            
-            with open(output_path, 'w', encoding='utf-8') as f:
-                json.dump(final_data, f, ensure_ascii=False, indent=4)
-            
-            logger.info(f"成功将 {len(updated_records)} 条处理结果保存到文件: {output_path}")
-            
-            return True # 流程完成
+            return True
             
         except Exception as e:
             logger.error(f"同步到钉钉多维表的过程中发生致命错误: {str(e)}")
@@ -476,7 +698,7 @@ class LeadsInsight:
             post_id (str): 帖子ID (即 "编号")。
             dingtalk_id (str): 钉钉多维表返回的记录ID。
         """
-        submission_file_path = os.path.join(self.sales_leads_dir, f"submission_{post_id}.json")
+        submission_file_path = os.path.join(self.hktlora_sales_leads_dir, f"submission_{post_id}.json")
         
         try:
             if not os.path.exists(submission_file_path):
@@ -515,21 +737,48 @@ class LeadsInsight:
         notable_records = []
         for record in records:
             # 构建fields对象
+            '''
+            # 提取表单提交信息
+            form_submission = data.get("form_submission", {})
+            submission["first_name"] = form_submission.get("First Name", "")
+            submission["last_name"] = form_submission.get("Last Name", "")
+            submission["email"] = form_submission.get("Email Address", "")
+            submission["phone"] = form_submission.get("WhatsApp/Phone NO.", "")
+            submission["country"] = form_submission.get("Country", "")
+            submission["postcode"] = form_submission.get("Postcode", "")
+            submission["message"] = form_submission.get("Message", "")
+            submission["date_of_submission"] = form_submission.get("Date of Submission", "")
+            
+            # 提取额外信息
+            extra_information = data.get("extra_information", {})
+            submitted_on = extra_information.get("Submitted On", {})
+            links = submitted_on.get("links", [])
+            
+            if links and isinstance(links, list) and len(links) > 0:
+                submission["view_page_href"] = links[0].get("href", "")
+            '''
             fields = {
                 "编号":record.get("post_id",""),
-                "客户": record.get("first_name", "") + " " + record.get("last_name", ""),
+                "客户": record.get("customer_name", ""),
+                "留言日期": record.get("date_of_submission", ""),
                 "电子邮件": record.get("email", ""),
                 "通讯号码": record.get("phone", ""),
                 "国家": record.get("country", ""),
                 "邮编": record.get("postcode", ""),
-                "留言内容": record.get("message", ""),
-                "留言日期": record.get("date_of_submission", ""),
+                "留言内容": record.get("message", "")[:9999],# 留言内容截取前9999个字符, 因为钉钉多维表的Text字段长度限制为10000个字符                "留言日期": record.get("date_of_submission", ""),
                 "是否查阅": record.get("read_unread", ""),
-                "留言位置": record.get("href", "")
+                "留言位置": record.get("view_page_href", "")
             }
+            
+            dingtalk_submission_file = os.path.join(self.dingtalk_sales_leads_dir, f"submission_{record.get('post_id', '')}.json")
+            with open(dingtalk_submission_file, 'r', encoding='utf-8') as f:
+                dingtalk_submission_data = json.load(f)
+            dingtalk_id = dingtalk_submission_data.get('dingding', {}).get('id', "")
+            # dingtalk_id = record.get("dingtalk_id", "")
            
             # 添加到记录列表
             notable_records.append({
+                "id": dingtalk_id,
                 "fields": fields
             })
         
@@ -546,23 +795,34 @@ class LeadsInsight:
             logger.info("开始执行LeadsInsight处理流程")
             
             # 步骤1: 整理网页内容
-            if not self.copy_files_to_sales_leads():
-                logger.error("步骤1失败: 无法整理网页内容")
-                return False
+            # copy_result = self.copy_files_to_hktlora_sales_leads()
+            # if not copy_result:
+            #     logger.error("步骤1失败: 无法整理网页内容")
+            #     return False
+                
+            # 检查是否有文件被复制
+            # if hasattr(copy_result, 'copied_count') and copy_result.copied_count == 0:
+            #     logger.info("【执行状态】本次运行没有新的销售线索需要同步")
+            #     return True
             
             # 步骤2: 将网页内容同步到钉钉多维表
             if not self.sync_to_dingtalk():
                 logger.error("步骤2失败: 无法同步到钉钉多维表")
                 return False
             
-            logger.info("LeadsInsight处理流程成功完成")
+            # 步骤3: 删除hktlora_sales_leads目录中的submission_*.json文件和Elementor_DB_*.json文件
+            # if not self.delete_files_in_hktlora_sales_leads():
+            #     logger.error("步骤3失败: 无法删除hktlora_sales_leads目录中的文件")
+            #     return False
+                
+            # logger.info("【执行状态】销售线索同步流程执行完成")
             return True
             
         except Exception as e:
             logger.error(f"LeadsInsight处理流程出错: {str(e)}")
-            # 在测试期间，将详细错误打印到控制台以方便调试
-            traceback.print_exc()
+            logger.error(f"详细错误: {traceback.format_exc()}")
             return False
+
 
 # 测试代码
 if __name__ == "__main__":

@@ -81,7 +81,7 @@ def main():
         # 根据步骤执行相应的操作
         if args.step == 1:
             logging.info("执行步骤1: 整理网页内容")
-            success = leads_insight.copy_files_to_sales_leads()
+            success = leads_insight.copy_files_to_hktlora_sales_leads()
             if success:
                 logging.info("步骤1完成: 成功整理网页内容")
             else:

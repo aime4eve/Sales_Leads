@@ -1,0 +1,21 @@
+{
+  "version": "1.0",
+  "task_group": {
+    "loop_count": 30,
+    "pause_minutes": 3,
+    "error_wait_minutes": 1,
+    "task_b_interval_minutes": 5,
+    "task_c_interval_minutes": 10
+  },
+  "task_params": {
+    "sync_top_pages": 2,
+    "retry_count": 3,
+    "retry_wait_seconds": 60,
+    "performance_threshold": {
+      "task_a_timeout": 300,
+      "task_b_timeout": 180,
+      "task_c_timeout": 120,
+      "task_d_timeout": 300
+    }
+  }
+}

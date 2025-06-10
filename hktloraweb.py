@@ -36,44 +36,52 @@ class HKTLoraWeb:
         log_dir = 'logs'  # 定义日志目录
         os.makedirs(log_dir, exist_ok=True)  # 确保日志目录存在
         self.log_file = os.path.join(log_dir, f'login_{self.CURRENT_TIME}.log')  # 使用完整路径
-        self._setup_logging()
+        
+        # 获取类的日志记录器
+        self.logger = logging.getLogger(__name__)
+        self.logger.info("HKTLoraWeb 实例已创建")
 
     def _setup_logging(self):
         """设置日志处理器"""
-        # 移除所有现有的处理器
-        for handler in logging.root.handlers[:]:
-            logging.root.removeHandler(handler)
+        # 获取类的日志记录器
+        self.logger = logging.getLogger(__name__)
+        
+        # 移除现有的处理器
+        for handler in self.logger.handlers[:]:
+            self.logger.removeHandler(handler)
             
         # 配置新的日志处理器
-        logging.basicConfig(
-            level=logging.ERROR,
-            format='%(asctime)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.FileHandler(self.log_file, encoding='utf-8')
-            ]
-        )
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        file_handler = logging.FileHandler(self.log_file, encoding='utf-8')
+        file_handler.setFormatter(formatter)
+        file_handler.setLevel(logging.INFO)
+        
+        self.logger.addHandler(file_handler)
+        self.logger.setLevel(logging.INFO)
 
     def _close_logging(self):
         """关闭所有日志处理器"""
         # 关闭并移除所有处理器
-        for handler in logging.root.handlers[:]:
+        for handler in self.logger.handlers[:]:
             handler.close()
-            logging.root.removeHandler(handler)
+            self.logger.removeHandler(handler)
 
     def tqdm_info(self, msg, color=Fore.WHITE):
         """使用tqdm写入彩色信息，同时记录到日志"""
         tqdm.write(f"{color}[INFO] {msg}{Style.RESET_ALL}")
+        self.logger.info(msg)
 
     def tqdm_warning(self, msg):
         """使用tqdm写入警告信息，同时记录到日志"""
         tqdm.write(f"{Fore.YELLOW}[WARNING] {msg}{Style.RESET_ALL}")
+        self.logger.warning(msg)
 
     def tqdm_error(self, msg):
         """使用tqdm写入错误信息，同时记录到日志"""
         tqdm.write(f"{Fore.RED}[ERROR] {msg}{Style.RESET_ALL}")
-        logging.error(msg)
+        self.logger.error(msg)
 
-    # 线程C：定时处理线程 B 生成的错误日志
+    # 任务C：处理任务B 生成的错误日志
     def extract_failed_urls(self):
         """从日志文件中提取失败的URL地址"""
         failed_urls = []
@@ -308,17 +316,31 @@ class HKTLoraWeb:
             self.tqdm_error(f"保存单个提交记录时出错: {str(e)}")
             return False
 
-    def extract_Elementor_DB(self, page, page_num):
+    def extract_Elementor_DB(self, page, page_num, download_record_count):
         """提取当前页面的Elementor数据库表格数据"""
         try:
-            # 使用选择器获取表格
-            table = page.query_selector('#posts-filter > table')
-            if not table:
-                self.tqdm_error("未找到目标表格")
-                return []
+            # 等待表格加载
+            try:
+                table = page.wait_for_selector('#posts-filter > table', timeout=30000)
+                if not table:
+                    self.tqdm_error("未找到目标表格")
+                    return False
+                self.tqdm_info("表格已加载")
+            except Exception as e:
+                self.tqdm_error(f"等待表格超时: {str(e)}")
+                return False
 
             # 获取所有行
-            rows = table.query_selector_all('tr')
+            try:
+                rows = table.query_selector_all('tr')
+                if not rows:
+                    self.tqdm_error("表格中没有找到数据行")
+                    return False
+                self.tqdm_info(f"找到 {len(rows)} 行数据")
+            except Exception as e:
+                self.tqdm_error(f"获取表格行时出错: {str(e)}")
+                return False
+
             table_data = []
             headers = []
 
@@ -327,6 +349,10 @@ class HKTLoraWeb:
                     # 获取表头
                     header_cells = row.query_selector_all('th')
                     headers = [cell.text_content().strip() for cell in header_cells if cell.text_content().strip()]
+                    if not headers:
+                        self.tqdm_error("未找到表头")
+                        return False
+                    self.tqdm_info(f"找到表头: {headers}")
                     continue
 
                 # 数据行
@@ -371,50 +397,73 @@ class HKTLoraWeb:
                 if row_data:
                     table_data.append(row_data)
 
+            if not table_data:
+                self.tqdm_error("未提取到任何表格数据")
+                return False
+
+            self.tqdm_info(f"成功提取 {len(table_data)} 条记录")
+
+            # 保存表格数据
+            table_output_file = os.path.join(self.CURRENT_OUTPUT_DIR, f"Elementor_DB_{page_num}.json")
+            try:
+                with open(table_output_file, 'w', encoding='utf-8') as f:
+                    json.dump(table_data, f, ensure_ascii=False, indent=2)
+                self.tqdm_info(f"表格数据已保存到: {table_output_file}")
+            except IOError as e:
+                self.tqdm_error(f"保存表格数据时出错: {str(e)}")
+                return False
+
+            # 从表格数据中提取View Submission链接
             submission_links = []
-            if table_data:
-                # 保存表格数据
-                table_output_file = os.path.join(self.CURRENT_OUTPUT_DIR, f"Elementor_DB_{page_num}.json")
-                try:
-                    with open(table_output_file, 'w', encoding='utf-8') as f:
-                        json.dump(table_data, f, ensure_ascii=False, indent=2)
-                except IOError as e:
-                    self.tqdm_error(f"保存表格数据时出错: {str(e)}")
-
-                # 从表格数据中提取View Submission链接
-                for row in table_data:
-                    if "View" in row and "href" in row["View"]:
-                        submission_links.append(row["View"]["href"])
+            for row in table_data:
+                if "View" in row and "href" in row["View"]:
+                    submission_links.append(row["View"]["href"])
             
-                # 处理View Submission链接
-                with tqdm(total=len(submission_links), 
-                         desc=f"{Fore.MAGENTA}处理第 {page_num} 页记录{Style.RESET_ALL}", 
-                         position=1, 
-                         leave=False) as sub_pbar:
-                    for index, link in enumerate(submission_links, 1):
-                        try:
-                            sub_pbar.set_description(
-                                f"{Fore.MAGENTA}处理第 {page_num} 页，第 {index}/{len(submission_links)} 个提交记录{Style.RESET_ALL}"
-                            )
+            if not submission_links:
+                self.tqdm_warning("未找到任何提交记录链接")
+                return True  # 虽然没有链接，但表格数据已保存，所以返回True
+            
+            self.tqdm_info(f"找到 {len(submission_links)} 个提交记录链接")
+            
+            # 处理View Submission链接
+            processed_count = 0
+            with tqdm(total=min(len(submission_links), download_record_count), 
+                     desc=f"{Fore.MAGENTA}处理第 {page_num} 页记录{Style.RESET_ALL}", 
+                     position=1, 
+                     leave=False) as sub_pbar:
+                for index, link in enumerate(submission_links, 1):
+                    # 如果已处理的记录数达到限制，退出循环
+                    if processed_count >= download_record_count:
+                        self.tqdm_info(f"已完成 {download_record_count} 条记录的处理")
+                        return True
+                        
+                    try:
+                        sub_pbar.set_description(
+                            f"{Fore.MAGENTA}处理第 {page_num} 页，第 {index}/{len(submission_links)} 个提交记录{Style.RESET_ALL}"
+                        )
 
-                            # 保存提交记录数据
-                            # 测试
-                            self.save_submission_data(page, link, self.CURRENT_OUTPUT_DIR)
-                            sub_pbar.update(1)
+                        # 保存提交记录数据
+                        if self.save_submission_data(page, link, self.CURRENT_OUTPUT_DIR):
+                            self.tqdm_info(f"成功保存提交记录: {link}")
+                            processed_count += 1
+                        else:
+                            self.tqdm_warning(f"保存提交记录失败: {link}")
                             
-                            # 添加随机延迟，避免请求过于频繁
-                            delay = random.uniform(1, 3)  # 随机延迟1-3秒
-                            time.sleep(delay)
-                            
-                        except Exception as e:
-                            self.tqdm_error(f"保存单个提交记录时出错: {str(e)}")
-                            continue
+                        sub_pbar.update(1)
+                        
+                        # 添加随机延迟，避免请求过于频繁
+                        delay = random.uniform(1, 3)  # 随机延迟1-3秒
+                        time.sleep(delay)
+                        
+                    except Exception as e:
+                        self.tqdm_error(f"保存单个提交记录时出错: {str(e)}")
+                        continue
 
-            return table_data
+            return True
             
         except Exception as e:
             self.tqdm_error(f"提取表格数据时出错: {str(e)}")
-            return []
+            return False
 
     def extract_pages(self, page):
         """提取当前页面的分页信息"""
@@ -440,46 +489,88 @@ class HKTLoraWeb:
             self.tqdm_error(f"提取分页信息时出错: {str(e)}")
             return 1, 1
 
-    # 线程A：创建单个浏览器实例并完成 www.hktlora.com 的登录逻辑
+    # 任务A：创建单个浏览器实例并完成 www.hktlora.com 的登录逻辑
     def login_main_site(self, page):
-        """登录到www.hktlora.com主站点"""
-        try:
-            self.tqdm_info("开始登录 www.hktlora.com 主站点", Fore.GREEN)
+        """登录主站点
+        
+        Args:
+            page: Playwright page 对象
             
-            with tqdm(total=5, desc=f"{Fore.GREEN}登录系统{Style.RESET_ALL}", position=1, leave=False) as login_pbar:
-                page.goto(self.BASE_URL)
-                login_pbar.update(1)
+        Returns:
+            bool: 登录是否成功
+        """
+        try:
+            self.logger.info("开始登录 www.hktlora.com 主站点")
+            
+            # 等待登录表单元素出现
+            try:
+                username_input = page.wait_for_selector("#user_login", timeout=30000)
+                password_input = page.wait_for_selector("#user_pass", timeout=30000)
+                submit_button = page.wait_for_selector("#wp-submit", timeout=30000)
                 
-                # 等待登录表单加载
-                page.wait_for_selector("#user_login")
-                page.wait_for_selector("#user_pass")
-                login_pbar.update(1)
-
-                # 填写登录表单
-                page.fill("#user_login", self.WP_USER)
-                page.fill("#user_pass", self.WP_PASS)
-                login_pbar.update(1)
+                if not all([username_input, password_input, submit_button]):
+                    self.logger.error("登录表单元素未完全加载")
+                    return False
+                
+                self.logger.info("登录表单元素已加载")
+                
+                # 清除现有输入
+                username_input.evaluate('el => el.value = ""')
+                password_input.evaluate('el => el.value = ""')
+                
+                # 输入WordPress登录信息
+                self.logger.info("正在填写WordPress登录表单")
+                username_input.fill(self.WP_USER)
+                password_input.fill(self.WP_PASS)
                 
                 # 点击登录按钮
-                page.click("#wp-submit")
-                login_pbar.update(1)
+                self.logger.info("点击登录按钮")
+                submit_button.click()
                 
                 # 等待登录完成
-                page.wait_for_selector("#wpadminbar")
-                self.tqdm_info("登录成功！", Fore.GREEN)
-                login_pbar.update(1)
+                try:
+                    # 等待重定向完成
+                    page.wait_for_load_state("networkidle", timeout=30000)
+                    
+                    # 检查是否登录成功 - 检查是否在管理面板页面
+                    if "/wp-admin" in page.url and not page.url.endswith("/wp-login.php"):
+                        self.logger.info("WordPress登录成功")
+                        return True
+                    else:
+                        self.logger.error(f"WordPress登录失败，当前URL: {page.url}")
+                        return False
+                        
+                except Exception as e:
+                    self.logger.error(f"等待WordPress登录完成时出错: {str(e)}")
+                    return False
                 
-                return True
-                
+            except Exception as e:
+                self.logger.error(f"处理WordPress登录表单时出错: {str(e)}")
+                return False
+            
         except Exception as e:
-            self.tqdm_error(f"登录失败: {str(e)}")
+            self.logger.error(f"登录过程出错: {str(e)}")
             return False
 
-    def download_url(self, page, url, page_num=None):
+    def download_url(self, page, url, page_num=None,download_record_count=20):
         """访问指定URL并提取页面数据"""
         try:
+            # 导航到页面
+            self.tqdm_info(f"正在访问页面: {url}")
             page.goto(url)
-            page.wait_for_load_state('networkidle')
+            
+            # 等待页面加载完成
+            page.wait_for_load_state('networkidle', timeout=30000)
+            page.wait_for_load_state('domcontentloaded', timeout=30000)
+            
+            # 等待表格容器出现
+            try:
+                page.wait_for_selector('#posts-filter', timeout=30000)
+                self.tqdm_info("表格容器已加载")
+            except Exception as e:
+                self.tqdm_error(f"等待表格容器超时: {str(e)}")
+                return False, None, None, None
+            
             # 添加随机延迟，避免请求过于频繁
             delay = random.uniform(1, 2)
             time.sleep(delay)
@@ -492,7 +583,9 @@ class HKTLoraWeb:
             
             # 提取表格数据
             if page_num is not None:
-                self.extract_Elementor_DB(page, page_num)
+                if not self.extract_Elementor_DB(page, page_num, download_record_count):
+                    self.tqdm_error("提取表格数据失败")
+                    return False, None, None, None
                 
             return True, current_url, total_pages, current_page
             
@@ -500,60 +593,69 @@ class HKTLoraWeb:
             self.tqdm_error(f"处理页面失败 {url}: {str(e)}")
             return False, None, None, None
 
-    # 线程B：定时刷新指定网页，抓取内容并保存到本地 JSON 文件，同时记录错误信息到日志文件
+    # 任务B：定时刷新指定网页，抓取内容并保存到本地 JSON 文件，同时记录错误信息到日志文件
     def do_refresh_pages(self, page, sync_top_pages=2):
-        with tqdm(total=1, desc=f"{Fore.BLUE}开始下载......{Style.RESET_ALL}", position=1, leave=True) as page_pbar:
-            # 先访问第一页获取总页数
-            page_pbar.set_description(f"{Fore.BLUE}处理第 首页 {Style.RESET_ALL}")
-            success, current_url, total_pages, current_page = self.download_url(
-                page, 
-                self.FORM_LIST_URL, 
-                page_num=1
-            )
-            if not success:
-                self.tqdm_error("无法访问表单列表页面，程序退出")
-                return
-            
-            page_pbar.total = total_pages
-            page_pbar.refresh()
+        """刷新页面并下载数据"""
+        try:
+            with tqdm(total=1, desc=f"{Fore.BLUE}开始下载......{Style.RESET_ALL}", position=1, leave=True) as page_pbar:
+                # 先访问第一页获取总页数
+                page_pbar.set_description(f"{Fore.BLUE}处理第 首页 {Style.RESET_ALL}")
+                success, current_url, total_pages, current_page = self.download_url(
+                    page, 
+                    self.FORM_LIST_URL, 
+                    page_num=1
+                )
+                if not success:
+                    self.tqdm_error("无法访问表单列表页面")
+                    return False
+                
+                page_pbar.total = total_pages
+                page_pbar.refresh()
 
-            # 处理后续分页数据
-            while True:
-                try:
-                    # 如果已经是最后一页或达到同步页数限制，退出循环
-                    if current_page >= (sync_top_pages if sync_top_pages >0 else total_pages):
+                # 处理后续分页数据
+                while True:
+                    try:
+                        # 如果已经是最后一页或达到同步页数限制，退出循环
+                        if current_page >= (sync_top_pages if sync_top_pages >0 else total_pages):
+                            self.tqdm_info("已完成指定页数的处理")
+                            return True
+                                                
+                        # 构造下一页的URL
+                        next_page_num = current_page + 1                        
+                        base_url = re.sub(r'&paged=\d+', '', current_url)  # 移除现有的paged参数
+                        if '?' in base_url:
+                            next_page_url = f"{base_url}&paged={next_page_num}"
+                        else:
+                            next_page_url = f"{base_url}?paged={next_page_num}"
+
+                        # 更新进度条
+                        page_pbar.set_description(f"{Fore.BLUE}处理第 {next_page_num}/{total_pages} 页{Style.RESET_ALL}")
+                        page_pbar.update(1)                             
+
+                        # 导航到下一页并提取数据
+                        success, current_url, total_pages, current_page = self.download_url(
+                            page,
+                            next_page_url,
+                            page_num=next_page_num
+                        )                       
+
+                        if not success:
+                            self.tqdm_warning(f"跳过第 {next_page_num} 页")
+                            continue
+
+                    except (ValueError, TypeError) as e:
+                        self.tqdm_warning(f"无法解析页码数值: {str(e)}")
                         break
-                                            
-                    # 构造下一页的URL
-                    next_page_num = current_page + 1                        
-                    base_url = re.sub(r'&paged=\d+', '', current_url)  # 移除现有的paged参数
-                    if '?' in base_url:
-                        next_page_url = f"{base_url}&paged={next_page_num}"
-                    else:
-                        next_page_url = f"{base_url}?paged={next_page_num}"
+                    except Exception as e:
+                        self.tqdm_error(f"处理分页时出错: {str(e)}")
+                        break
+                
+                return True
+                
+        except Exception as e:
+            self.tqdm_error(f"刷新页面时出错: {str(e)}")
+            return False
 
-                    # 更新进度条
-                    page_pbar.set_description(f"{Fore.BLUE}处理第 {next_page_num}/{total_pages} 页{Style.RESET_ALL}")
-                    page_pbar.update(1)                             
-
-                    # 导航到下一页并提取数据
-                    success, current_url, total_pages, current_page = self.download_url(
-                        page,
-                        next_page_url,
-                        page_num=next_page_num
-                    )                       
-
-                    if not success:
-                        self.tqdm_warning(f"跳过第 {next_page_num} 页")
-                        continue
-
-                except (ValueError, TypeError) as e:
-                    self.tqdm_warning(f"无法解析页码数值: {str(e)}")
-                    break
-                except Exception as e:
-                    self.tqdm_error(f"处理分页时出错: {str(e)}")
-                    break
-    
     def run(self,sync_top_pages=2):
         """运行主程序"""
         try:

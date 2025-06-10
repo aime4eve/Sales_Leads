@@ -1,0 +1,62 @@
+{
+    "version": "1.0",
+    "last_update": "2025-06-05 21:12:50",
+    
+    "task_group": {
+        "loop_count": 30,
+        "pause_minutes": 3,
+        "error_wait_minutes": 1,
+        "current_group_id": null,
+        "completed_groups": 0
+    },
+
+    "task_params": {
+        "sync_top_pages": 2,
+        "retry_count": 3,
+        "retry_wait_seconds": 60,
+        "task_scheduling": {
+            "task_b_start_delay_seconds": 10,
+            "task_b_interval_minutes": 90,
+            "task_c_start_delay_seconds": 120,
+            "task_c_interval_minutes": 30
+        },
+        "performance_threshold": {
+            "task_a_timeout": 300,
+            "task_b_timeout": 180,
+            "task_c_timeout": 120,
+            "task_d_timeout": 300
+        }
+    },
+
+    "execution_state": {
+        "last_run": null,
+        "completed_runs": 0,
+        "error_count": 0,
+        "current_loop": 0,
+        "last_error": null,
+        "last_status": "init",
+        "task_states": {
+            "task_b_running": false,
+            "task_c_running": false,
+            "task_b_last_start": null,
+            "task_c_last_start": null,
+            "task_b_last_end": null,
+            "task_c_last_end": null,
+            "task_a_last_end": null
+        }
+    },
+
+    "resource_thresholds": {
+        "cpu_percent": 80,
+        "memory_percent": 80,
+        "disk_percent": 90,
+        "process_memory_mb": 1024
+    },
+
+    "logging": {
+        "level": "INFO",
+        "max_file_size_mb": 10,
+        "max_files": 5,
+        "log_dir": "logs"
+    }
+} 

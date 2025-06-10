@@ -1,0 +1,22 @@
+{
+  "last_run": "2025-06-09 17:16:19",
+  "completed_runs": 95,
+  "error_count": 0,
+  "last_error": {
+    "message": "Page.goto: net::ERR_INVALID_AUTH_CREDENTIALS at https://hktlora.com/wp-admin\nCall log:\n  - navigating to \"https://hktlora.com/wp-admin\", waiting until \"domcontentloaded\"\n",
+    "time": "2025-06-09 16:49:53"
+  },
+  "last_status": "running",
+  "sync_top_pages": 2,
+  "task_b_start_delay_seconds": 10,
+  "task_b_interval_minutes": 90,
+  "task_c_start_delay_seconds": 120,
+  "task_c_interval_minutes": 30,
+  "task_b_running": true,
+  "task_b_last_start": "2025-06-06 09:13:10",
+  "task_c_running": false,
+  "task_c_last_start": "2025-06-06 09:45:10",
+  "task_b_last_end": "2025-06-06 07:53:21",
+  "task_c_last_end": "2025-06-06 09:45:10",
+  "task_a_last_end": "2025-06-09 17:16:19"
+}

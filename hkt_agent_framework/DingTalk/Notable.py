@@ -161,9 +161,9 @@ class Notable:
                     views = definition_data.get('items', [])
                 elif 'value' in definition_data:
                     views = definition_data.get('value', [])
-                
+                # print(f"views: {views},sheet_name: {sheet_name}")
                 for view in views:
-                    if view.get('name') == sheet_name:
+                    if view.get('name') == sheet_name or view.get('id') == sheet_name:
                         sheet_id = view.get('id', view.get('sheetId'))
                         logger.debug(f"找到表格视图 '{sheet_name}' 的ID: {sheet_id}")
                         return sheet_id
@@ -264,19 +264,38 @@ class Notable:
             final_table_id = self._ensure_table_id(table_id)
             sheet_id = self._find_sheet_id(sheet_name)
 
+            # 设置默认的API调用方法
+            call_api_method = 'POST'
+
             # 幂等性检查：如果提供了fields_id，则先检查记录是否存在
             if fields_id:
-                # 调用get_table_record_byid进行存在性检查
-                record = self.get_table_record_byid(final_table_id, sheet_name, fields_id)
-                if record and record.get("id") == fields_id:
-                    # 记录已存在，记录日志并返回，终止后续操作
-                    logger.info(f"记录 '{fields_id}' 在表格 '{sheet_name}' 中已存在，跳过新增操作。")
-                    return record.get("id"), f"记录 {fields_id} 已存在"
+                # 调用check_record_exists进行存在性检查
+                record_exists = self.check_record_exists(final_table_id, sheet_name, fields_id)
+                if record_exists:
+                    # 记录已存在
+                    logger.info(f"记录 '{fields_id}' 已存在，将执行更新操作。")
+                    call_api_method = 'PUT'
+                    json_data = {
+                        "records": [
+                            {
+                                "id": fields_id,
+                                "fields": fields
+                            }
+                        ]
+                    }
                 else:
-                    # 记录不存在，继续执行新增流程
+                    # 记录不存在
                     logger.info(f"记录 '{fields_id}' 不存在，将执行新增操作。")
-                    # 可选的短暂延时，以防API频率问题
-                    time.sleep(0.5)
+                    json_data = {
+                        "records": [
+                            {
+                                "fields": fields
+                            }
+                        ]
+                    }
+                    # call_api_method 保持默认值 'POST'
+                # 可选的短暂延时，以防API频率问题
+                time.sleep(0.5)
 
             # 2. 准备API请求参数
             url_template = self.dingtalk.set_notable_records_url
@@ -286,17 +305,11 @@ class Notable:
             # 使用与get_table_records一致的占位符
             url = url_template.replace("{table_id}", final_table_id).replace("{sheetname}", sheet_id).replace("{unionid}", self.dingtalk.operator_id)
 
-            json_data = {
-                "records": [
-                    {
-                        "fields": fields
-                    }
-                ]
-            }
+
             
             # 3. 使用DingTalk中统一的方法发送API请求
             result = self.dingtalk.call_dingtalk_api(
-                method='POST',
+                method=call_api_method,
                 url=url,
                 json_data=json_data
             )
@@ -307,12 +320,12 @@ class Notable:
                 record_id = result["value"][0].get("id")
 
             if not record_id:
-                error_msg = f"新增记录成功，但响应中未找到ID: {result}"
+                error_msg = f"刷新记录成功，但响应中未找到ID: {result}"
                 logger.error(error_msg)
                 return None, error_msg
 
-            logger.info(f"成功新增记录到'{sheet_name}'，记录ID: {record_id}")
-            return record_id, None
+            logger.info(f"成功刷新记录到'{sheet_name}'多维表，记录ID: {record_id}")
+            return record_id, f"刷新记录成功，记录ID: {record_id}"
 
         except Exception as e:
             # 捕获call_dingtalk_api中抛出的任何异常
@@ -967,7 +980,7 @@ class Notable:
             logger.error(traceback.format_exc())
             return False
 
-    def set_table_records(self, table_id=None, sheet_name="任务管理", definition_file="notable_definition.json", 
+    def set_table_records(self, table_id=None, sheet_name="资源池", definition_file="notable_definition.json", 
                          input_file=None, handle_null=False):
         """
         设置钉钉多维表中的记录
@@ -1043,15 +1056,12 @@ class Notable:
                         )
 
                         # 根据返回结果更新进度条和日志
-                        if message:
-                            if "已存在" in message:
-                                pbar.set_postfix_str("已存在, 跳过")
-                            else: # 如果有消息但不是"已存在"，则视为错误
-                                logger.error(f"处理记录 {record_id} 失败: {message}")
-                                self._save_failed_record(record, message, sheet_name)
-                                pbar.set_postfix_str("失败")
-                        elif created_id:
+                        if created_id:
                             pbar.set_postfix_str("成功")
+                        else:                           
+                            logger.error(f"处理记录 {record_id} 失败: {message}")
+                            self._save_failed_record(record, message, sheet_name)
+                            pbar.set_postfix_str("失败")
                         
                     except Exception as e:
                         # 捕获循环内的意外异常，确保主循环不会中断

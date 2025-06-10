@@ -198,3 +198,5 @@ logs
 elementor_db_sync
 /logs/*
 /elementor_db_sync/*
+tests
+/tests/*

@@ -1,0 +1,63 @@
+{
+  "version": "1.0",
+  "last_update": "2025-06-09 18:51:10",
+  "task_group": {
+    "loop_count": 30,
+    "pause_minutes": 3,
+    "error_wait_minutes": 1,
+    "current_group_id": "G20250605001",
+    "completed_groups": 0
+  },
+  "task_params": {
+    "sync_top_pages": 1,
+    "retry_count": 3,
+    "retry_wait_seconds": 60,
+    "task_scheduling": {
+      "task_b_start_delay_seconds": 10,
+      "task_b_interval_minutes": 90,
+      "task_c_start_delay_seconds": 120,
+      "task_c_interval_minutes": 30
+    },
+    "performance_threshold": {
+      "task_a_timeout": 300,
+      "task_b_timeout": 180,
+      "task_c_timeout": 120,
+      "task_d_timeout": 300
+    }
+  },
+  "execution_state": {
+    "last_run": "2025-06-09 18:50:48",
+    "completed_runs": 13,
+    "error_count": 0,
+    "current_loop": 0,
+    "last_error": {
+      "message": "销售线索同步失败",
+      "time": "2025-06-09 18:29:27"
+    },
+    "last_status": "completed",
+    "task_states": {
+      "task_b_running": false,
+      "task_c_running": false,
+      "task_b_last_start": "2025-06-09 18:50:48",
+      "task_c_last_start": "2025-06-09 18:51:10",
+      "task_b_last_end": "2025-06-09 18:51:10",
+      "task_c_last_end": "2025-06-09 18:51:10",
+      "task_a_last_end": "2025-06-09 18:50:48",
+      "task_d_running": false,
+      "task_d_last_start": "2025-06-09 18:51:10",
+      "task_d_last_end": "2025-06-09 18:51:10"
+    }
+  },
+  "resource_thresholds": {
+    "cpu_percent": 80,
+    "memory_percent": 80,
+    "disk_percent": 90,
+    "process_memory_mb": 1024
+  },
+  "logging": {
+    "level": "ERROR",
+    "max_file_size_mb": 10,
+    "max_files": 5,
+    "log_dir": "logs"
+  }
+}

@@ -1,17 +1,21 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="hkt_agent_framework",
-    version="0.1.0",
+    name="sales_leads",
+    version="1.0.0",
     packages=find_packages(),
-    install_requires=[
-        "requests",
-        # 其他依赖项可以从requirements.txt中读取
+    py_modules=[
+        'sync_hktlora',
+        'hktloraweb',
+        'LeadsInsight',
+        'log_checker',
+        'log_cleaner'
     ],
-    author="伍志勇",
-    author_email="",  # 可选
-    description="HKT Agent Framework for Sales Leads",
-    long_description=open("README.md").read(),
-    long_description_content_type="text/markdown",
-    python_requires=">=3.6",
+    install_requires=[
+        'playwright',
+        'apscheduler',
+        'psutil',
+        'pytest',
+    ],
+    python_requires='>=3.7',
 ) 

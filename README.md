@@ -26,29 +26,67 @@ playwright install chromium
 - tqdm: 进度条显示
 - colorama: 控制台彩色输出
 
-## 目录结构
+## 项目结构
 
 ```
-.
-├── sync_hktlora.py      # 主程序
-├── hktloraweb.py        # HKT Lora网页操作类
-├── LeadsInsight.py      # 销售线索处理类
-├── logs/                # 日志目录
-├── elementor_db_sync/   # 网页数据同步目录
-└── apscheduler_state.json  # 调度器状态文件
+Sales_Leads/
+├── design/                # 设计文档目录
+├── docs/                 # 文档目录
+│   └── MIGRATION.md     # 配置迁移说明
+├── hkt_agent_framework/  # 框架代码
+│   └── DingTalk/        # 钉钉相关模块
+├── notable/             # Notable相关代码
+├── tests/               # 测试目录
+│   ├── integration/     # 集成测试
+│   └── system/         # 系统测试
+├── task_config.json    # 配置文件
+├── hktloraweb.py       # 网页操作模块
+├── LeadsInsight.py     # 销售线索处理
+├── sync_hktlora.py     # 主程序
+├── requirements.txt    # 依赖管理
+└── README.md          # 说明文档
 ```
+
+## 快速开始
+
+1. 安装依赖：
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. 配置程序：
+   - 复制配置示例：`cp task_config.example.json task_config.json`
+   - 根据需要修改配置
+
+3. 运行程序：
+   ```bash
+   python sync_hktlora.py
+   ```
+
+## 故障排查
+
+如果程序运行出现问题：
+
+1. 检查日志文件
+2. 检查 `task_config.json` 中的配置
+3. 确认网络连接正常
+4. 查看错误信息
 
 ## 配置文件
 
-程序使用 `apscheduler_state.json` 进行配置管理，主要配置项包括：
+程序使用 `task_config.json` 进行配置管理，主要配置项包括：
 
 ```json
 {
-  "sync_top_pages": 2,                    # 同步的页面数量
-  "task_b_start_delay_seconds": 0,        # 任务B启动延迟（秒）
-  "task_b_interval_minutes": 5,           # 任务B执行间隔（分钟）
-  "task_c_start_delay_seconds": 60,       # 任务C启动延迟（秒）
-  "task_c_interval_minutes": 10           # 任务C执行间隔（分钟）
+  "task_params": {
+    "sync_top_pages": 2,                    # 同步的页面数量
+    "task_scheduling": {
+      "task_b_start_delay_seconds": 0,      # 任务B启动延迟（秒）
+      "task_b_interval_minutes": 5,         # 任务B执行间隔（分钟）
+      "task_c_start_delay_seconds": 60,     # 任务C启动延迟（秒）
+      "task_c_interval_minutes": 10         # 任务C执行间隔（分钟）
+    }
+  }
 }
 ```
 
@@ -129,28 +167,112 @@ python sync_hktlora.py
 
 ## 配置说明
 
-### 动态配置
+### 配置文件结构
 
-你可以通过修改 `apscheduler_state.json` 文件来动态调整程序行为：
+项目使用 `task_config.json` 作为统一的配置文件，包含以下主要部分：
 
-1. **页面同步配置**
-   - `sync_top_pages`: 设置要同步的页面数量
-   - 修改后将在任务B下次执行时生效
+1. **基本信息**
+   - `version`: 配置文件版本
+   - `last_update`: 最后更新时间
 
-2. **任务B配置**
-   - `task_b_start_delay_seconds`: 首次启动延迟
-   - `task_b_interval_minutes`: 执行间隔
-   - 修改后将在任务B下次执行完成时生效
+2. **任务组配置** (`task_group`)
+   - `loop_count`: 循环执行次数
+   - `pause_minutes`: 循环间暂停时间
+   - `error_wait_minutes`: 错误后等待时间
+   - `current_group_id`: 当前任务组ID
+   - `completed_groups`: 已完成的任务组数
 
-3. **任务C配置**
-   - `task_c_start_delay_seconds`: 首次启动延迟
-   - `task_c_interval_minutes`: 执行间隔
+3. **任务参数** (`task_params`)
+   - `sync_top_pages`: 要同步的页面数量
+   - `retry_count`: 重试次数
+   - `retry_wait_seconds`: 重试等待时间
+   - **任务调度** (`task_scheduling`)
+     - `task_b_start_delay_seconds`: 任务B首次启动延迟
+     - `task_b_interval_minutes`: 任务B执行间隔
+     - `task_c_start_delay_seconds`: 任务C首次启动延迟
+     - `task_c_interval_minutes`: 任务C执行间隔
+   - **性能阈值** (`performance_threshold`)
+     - `task_a_timeout`: 任务A超时时间
+     - `task_b_timeout`: 任务B超时时间
+     - `task_c_timeout`: 任务C超时时间
+     - `task_d_timeout`: 任务D超时时间
 
-### 日志配置
+4. **执行状态** (`execution_state`)
+   - `last_run`: 最后运行时间
+   - `completed_runs`: 完成的运行次数
+   - `error_count`: 错误计数
+   - `current_loop`: 当前循环次数
+   - `last_error`: 最后一次错误信息
+   - `last_status`: 最后状态
+   - **任务状态** (`task_states`)
+     - 各任务的运行状态（running）
+     - 各任务的开始和结束时间
 
-- 所有日志文件统一存储在 `logs` 目录
-- 日志文件命名格式：`login_YYYYMMDD_HHMMSS.log`
-- 处理过的日志文件会自动重命名为 `.bak` 后缀
+5. **资源阈值** (`resource_thresholds`)
+   - `cpu_percent`: CPU使用率阈值
+   - `memory_percent`: 内存使用率阈值
+   - `disk_percent`: 磁盘使用率阈值
+   - `process_memory_mb`: 进程内存限制
+
+6. **日志配置** (`logging`)
+   - `level`: 日志级别
+   - `max_file_size_mb`: 单个日志文件大小限制
+   - `max_files`: 保留的日志文件数量
+   - `log_dir`: 日志目录
+
+### 配置示例
+
+```json
+{
+    "version": "1.0",
+    "last_update": "2025-06-05 21:12:50",
+    "task_params": {
+        "sync_top_pages": 2,
+        "task_scheduling": {
+            "task_b_start_delay_seconds": 10,
+            "task_b_interval_minutes": 90,
+            "task_c_start_delay_seconds": 120,
+            "task_c_interval_minutes": 30
+        }
+    }
+}
+```
+
+### 配置更新
+
+配置文件支持动态更新，修改后将在下次任务执行时生效：
+
+1. **任务调度更新**
+   - 修改 `task_scheduling` 中的参数
+   - 新的调度间隔将在当前任务完成后生效
+   - 首次启动延迟仅在程序启动时生效
+
+2. **性能参数更新**
+   - 修改 `performance_threshold` 中的超时设置
+   - 新的超时设置将在下次任务执行时生效
+
+3. **资源限制更新**
+   - 修改 `resource_thresholds` 中的阈值
+   - 新的阈值将立即生效
+
+4. **日志配置更新**
+   - 修改 `logging` 中的设置
+   - 需要重启程序才能生效
+
+### 注意事项
+
+1. 配置文件使用 UTF-8 编码
+2. 时间相关的配置单位说明：
+   - `*_seconds`: 秒
+   - `*_minutes`: 分钟
+   - 超时配置单位均为秒
+3. 状态值说明：
+   - `init`: 初始状态
+   - `running`: 运行中
+   - `error`: 错误状态
+   - `completed`: 完成状态
+   - `shutdown`: 已关闭
+4. 建议在修改配置前备份当前配置文件
 
 ## 销售线索处理
 
@@ -207,6 +329,145 @@ python test_leads_insight.py --step 3
 ## 调试建议
 
 1. 查看 `logs` 目录下的日志文件
-2. 检查 `apscheduler_state.json` 中的状态信息
+2. 检查 `task_config.json` 中的状态信息
 3. 观察浏览器窗口的操作情况
 4. 需要时可以调整日志级别获取更详细的信息
+
+## Sales_Leads 项目
+
+## 项目说明
+Sales_Leads 是一个自动化网页抓取和数据同步工具，用于从网页获取销售线索数据并同步到钉钉多维表。
+
+## 主要功能
+1. 自动登录和页面抓取
+2. 定时刷新和数据保存
+3. 错误日志处理和重试
+4. 销售线索数据同步
+5. 性能监控和资源管理
+
+## 系统要求
+- Python 3.7+
+- Chrome浏览器
+- 钉钉开放平台账号
+- psutil（可选，用于系统资源监控）
+
+## 安装
+1. 克隆仓库
+```bash
+git clone [repository_url]
+cd Sales_Leads
+```
+
+2. 安装依赖
+```bash
+pip install -r requirements.txt
+```
+
+## 配置
+1. 创建配置文件
+```bash
+cp task_config.json.example task_config.json
+```
+
+2. 修改配置文件
+编辑 `task_config.json`，根据需要调整以下配置：
+- task_group：任务组执行配置
+- task_params：任务参数配置
+- resource_thresholds：资源阈值配置
+- logging：日志配置
+
+## 使用方法
+1. 启动程序
+```bash
+python sync_hktlora.py
+```
+
+2. 监控运行状态
+- 查看日志文件：`logs/login_*.log`
+- 查看状态文件：`task_config.json`
+
+3. 停止程序
+按 Ctrl+C 或发送 SIGTERM 信号
+
+## 配置文件说明
+
+### task_group 配置
+```json
+{
+    "loop_count": 30,        // 任务组内循环次数
+    "pause_minutes": 3,      // 任务组间暂停时间
+    "error_wait_minutes": 1  // 错误后等待时间
+}
+```
+
+### task_params 配置
+```json
+{
+    "sync_top_pages": 2,     // 同步的页面数量
+    "retry_count": 3,        // 任务失败重试次数
+    "retry_wait_seconds": 60 // 重试等待时间
+}
+```
+
+### resource_thresholds 配置
+```json
+{
+    "cpu_percent": 80,       // CPU使用率阈值
+    "memory_percent": 80,    // 内存使用率阈值
+    "disk_percent": 90,      // 磁盘使用率阈值
+    "process_memory_mb": 1024 // 进程内存使用阈值
+}
+```
+
+## 任务执行流程
+1. Task A：创建浏览器实例并登录
+2. Task B：定时刷新页面并保存内容
+3. Task C：处理错误日志和重试失败URL
+4. Task D：同步销售线索数据到钉钉多维表
+
+## 错误处理
+- 任务失败自动重试
+- 指数退避重试策略
+- 状态一致性检查
+- 资源使用监控
+
+## 性能监控
+- CPU使用率监控
+- 内存使用情况监控
+- 磁盘使用情况监控
+- 任务执行时间监控
+
+## 注意事项
+1. 确保配置文件格式正确
+2. 不要手动修改状态文件
+3. 定期检查日志文件大小
+4. 监控系统资源使用情况
+
+## 常见问题
+1. Q: 程序启动失败
+   A: 检查配置文件格式和必要参数
+
+2. Q: 任务执行超时
+   A: 调整性能阈值配置
+
+3. Q: 内存使用过高
+   A: 检查资源阈值配置
+
+## 贡献指南
+1. Fork 项目
+2. 创建功能分支
+3. 提交更改
+4. 发起 Pull Request
+
+## 许可证
+MIT License
+
+## 作者
+[Your Name]
+
+## 更新日志
+### v1.0.0 (2025-06-05)
+- 实现基本功能
+- 添加任务调度系统
+- 添加性能监控
+- 添加错误处理
