@@ -19,6 +19,9 @@ class LogCleaner:
         self.log_dir = log_dir
         self.retention_days = retention_days
         self.logger = logging.getLogger("LogCleaner")
+        # 使用根日志记录器的级别
+        root_logger = logging.getLogger()
+        self.logger.setLevel(root_logger.level)
     
     def get_log_files(self) -> List[str]:
         """获取所有日志文件路径"""

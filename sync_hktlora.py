@@ -4,8 +4,16 @@ import sys
 import time
 import json
 import os
+import argparse
 from datetime import datetime
 from pathlib import Path
+
+# 导入版本模块
+try:
+    import version
+    logging.info("成功导入 version 模块")
+except ImportError as e:
+    logging.error(f"导入 version 模块失败: {str(e)}")
 
 try:
     from playwright.sync_api import sync_playwright
@@ -79,9 +87,9 @@ class SimpleConfig:
 class SyncHKTLora:
     """简化的HKTLora同步程序"""
     
-    def __init__(self):
+    def __init__(self, config_file='task_config.json'):
         self.running = True
-        self.config = SimpleConfig()
+        self.config = SimpleConfig(config_file)
         self.hkt_web = None
         self.playwright = None
         self.browser = None
@@ -165,6 +173,10 @@ class SyncHKTLora:
         try:
             logging.info("正在初始化组件...")
             
+            # 获取根日志记录器的级别
+            root_logger = logging.getLogger()
+            log_level = root_logger.level
+            
             # 初始化HKTLoraWeb
             self.hkt_web = HKTLoraWeb()
             if not self.hkt_web:
@@ -174,6 +186,13 @@ class SyncHKTLora:
             self.leads_insight = LeadsInsight()
             if not self.leads_insight:
                 raise Exception("LeadsInsight初始化失败")
+            
+            # 确保所有组件的日志记录器使用相同的级别
+            logging.getLogger("HKTLoraWeb").setLevel(log_level)
+            logging.getLogger("LeadsInsight").setLevel(log_level)
+            logging.getLogger("DingTalk").setLevel(log_level)
+            logging.getLogger("Notable").setLevel(log_level)
+            logging.getLogger("LogCleaner").setLevel(log_level)
             
             logging.info("组件初始化成功")
             return True
@@ -385,44 +404,119 @@ def setup_logging(config):
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_file = os.path.join(log_dir, f'sync_hktlora_{current_time}.log')
     
-    # 配置日志
-    logging.basicConfig(
-        level=getattr(logging, log_level),
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_file, encoding='utf-8'),
-            logging.StreamHandler(sys.stdout)
-        ]
-    )
+    # 配置根日志记录器
+    root_logger = logging.getLogger()
+    
+    # 移除所有现有的处理器
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+    
+    # 设置日志格式
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    
+    # 创建并配置文件处理器
+    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+    file_handler.setFormatter(formatter)
+    file_handler.setLevel(getattr(logging, log_level))
+    root_logger.addHandler(file_handler)
+    
+    # 创建并配置控制台处理器
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(formatter)
+    console_handler.setLevel(getattr(logging, log_level))
+    root_logger.addHandler(console_handler)
+    
+    # 设置根日志记录器的级别
+    root_logger.setLevel(getattr(logging, log_level))
     
     logging.info(f"日志系统初始化完成，日志文件: {log_file}")
-    return log_file
+    logging.info(f"日志级别设置为: {log_level}")
+    
+    return log_file, log_level
 
+
+def get_config_help():
+    """返回配置文件帮助信息"""
+    return """
+task_config.json 配置说明：
+
+{
+    "task_params": {
+        "sync_top_pages": 1,          # 同步的页数，默认为1
+        "task_interval_seconds": 180,  # 任务间隔时间（秒），默认180秒
+        "refresh_wait_seconds": 5,     # 刷新后等待时间（秒），默认5秒
+        "extract_wait_seconds": 15,    # 提取后等待时间（秒），默认15秒
+        "leads_wait_seconds": 20       # 处理销售线索后等待时间（秒），默认20秒
+    },
+    "logging": {
+        "level": "ERROR",             # 日志级别：DEBUG, INFO, WARNING, ERROR, CRITICAL
+        "log_dir": "logs"             # 日志文件目录
+    }
+}
+
+说明：
+1. sync_top_pages: 每次同步时处理的页面数量
+2. task_interval_seconds: 两次任务执行之间的等待时间
+3. refresh_wait_seconds: 页面刷新后的等待时间，确保页面加载完成
+4. extract_wait_seconds: URL提取后的等待时间
+5. leads_wait_seconds: 销售线索处理后的等待时间
+6. level: 日志记录级别，影响日志的详细程度
+7. log_dir: 日志文件保存的目录路径
+"""
+
+def parse_arguments():
+    """解析命令行参数"""
+    # 获取版本号
+    try:
+        import version
+        current_version = version.get_version()
+    except Exception:
+        current_version = 'v0.6.1'  # 默认版本号
+        
+    parser = argparse.ArgumentParser(description='HKT Sales Leads Sync Tool')
+    parser.add_argument('--version', action='version', version=f'hkt-sales_leads {current_version}')
+    parser.add_argument('--help-config', action='store_true', help='显示配置文件帮助信息')
+    parser.add_argument('--config', '-c', type=str, default='task_config.json', help='配置文件路径')
+    args = parser.parse_args()
+    
+    if args.help_config:
+        print(get_config_help())
+        sys.exit(0)
+    
+    return args
 
 def main():
     """主函数"""
+    args = parse_arguments()
+    
+    # 设置日志
+    config = SimpleConfig(args.config)
+    log_file, log_level = setup_logging(config)
+    
+    # 显示版本号
+    try:
+        import version
+        current_version = version.get_version()
+        print(f"HKT Sales Leads 同步工具 {current_version}")
+        logging.info(f"程序版本: {current_version}")
+    except Exception as e:
+        logging.warning(f"无法获取版本信息: {str(e)}")
+    
     try:
         print("SyncHKTLora 启动中...")
         print("按 Ctrl+C 可退出程序")
         
-        # 创建配置管理器
-        config = SimpleConfig()
-        
-        # 设置日志
-        setup_logging(config)
-        
-        # 创建并运行同步程序
-        sync_app = SyncHKTLora()
-        sync_app.run()
+        # 初始化并运行
+        sync = SyncHKTLora(args.config)
+        sync.run()
         
         return 0
         
     except KeyboardInterrupt:
-        print("\n收到退出信号，程序正在退出...")
+        logging.info("用户中断，程序退出")
         return 0
     except Exception as e:
-        print(f"程序启动失败: {str(e)}")
-        logging.error(f"程序启动失败: {str(e)}")
+        logging.error(f"程序运行出错: {str(e)}")
         return 1
 
 

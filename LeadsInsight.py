@@ -15,114 +15,73 @@ from log_cleaner import LogCleaner
 from log_checker import LogChecker
 
 def setup_logging():
-    """
-    设置和初始化日志系统
-    包含权限检查、文件系统检查、日志轮转配置和清理机制
-    """
+    """设置日志配置"""
+    # 确保日志目录存在
     log_dir = 'logs'
-    log_file = os.path.join(log_dir, 'leads_insight.log')
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
     
-    # 确保日志目录存在并有正确的权限
+    # 当前时间作为日志文件名的一部分
+    current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_file = os.path.join(log_dir, f'leads_insight_{current_time}.log')
+    
+    # 获取根日志记录器的级别
+    root_logger = logging.getLogger()
+    log_level = root_logger.level
+    
+    # 创建日志格式化器
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    
+    # 创建RotatingFileHandler
+    # 设置单个日志文件最大为10MB
+    # 保留最近的5个日志文件
+    file_handler = RotatingFileHandler(
+        log_file,
+        maxBytes=10*1024*1024,  # 10MB
+        backupCount=5,
+        encoding='utf-8'
+    )
+    file_handler.setFormatter(formatter)
+    file_handler.setLevel(log_level)
+    
+    # 创建控制台处理器
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    console_handler.setLevel(log_level)
+    
+    # 获取LeadsInsight日志记录器
+    logger = logging.getLogger("LeadsInsight")
+    
+    # 移除所有现有的处理器
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
+    
+    # 添加新的处理器
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+    
+    # 设置日志级别为根日志记录器的级别
+    logger.setLevel(log_level)
+    
+    logger.info("日志系统初始化成功")
+    logger.info(f"日志文件路径: {log_file}")
+    logger.info("日志轮转配置: 单个文件最大10MB，保留最近5个文件")
+    
+    # 初始化并运行日志清理器
     try:
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-            # 设置目录权限为755 (rwxr-xr-x)
-            os.chmod(log_dir, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
-    except Exception as e:
-        print(f"创建日志目录失败: {str(e)}")
-        sys.exit(1)
-
-    # 检查日志文件权限
-    try:
-        # 如果日志文件不存在，创建它
-        if not os.path.exists(log_file):
-            with open(log_file, 'a') as f:
-                pass
-            # 设置文件权限为644 (rw-r--r--)
-            os.chmod(log_file, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
+        cleaner = LogCleaner(log_dir=log_dir, retention_days=30)
+        disk_usage = cleaner.get_disk_usage()
+        if disk_usage is not None:
+            logger.info(f"当前日志目录使用空间: {disk_usage:.2f}MB")
         
-        # 测试文件是否可写
-        try:
-            with open(log_file, 'a') as f:
-                f.write("")
-        except IOError as e:
-            print(f"日志文件不可写: {str(e)}")
-            sys.exit(1)
+        if cleaner.clean_old_logs():
+            logger.info("日志清理完成")
+        else:
+            logger.warning("日志清理过程中出现错误")
     except Exception as e:
-        print(f"设置日志文件失败: {str(e)}")
-        sys.exit(1)
-
-    # 配置日志记录
-    try:
-        # 创建日志格式化器
-        formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        )
-
-        # 创建RotatingFileHandler
-        # 设置单个日志文件最大为10MB
-        # 保留最近的5个日志文件
-        file_handler = RotatingFileHandler(
-            log_file,
-            maxBytes=10*1024*1024,  # 10MB
-            backupCount=5,
-            encoding='utf-8'
-        )
-        file_handler.setFormatter(formatter)
-
-        # 创建控制台处理器
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(formatter)
-
-        # 获取根日志记录器
-        root_logger = logging.getLogger()
-        root_logger.setLevel(logging.INFO)
-
-        # 移除所有现有的处理器
-        for handler in root_logger.handlers[:]:
-            root_logger.removeHandler(handler)
-
-        # 添加新的处理器
-        root_logger.addHandler(file_handler)
-        root_logger.addHandler(console_handler)
-
-        # 获取LeadsInsight日志记录器
-        logger = logging.getLogger("LeadsInsight")
-        logger.info("日志系统初始化成功")
-        logger.info(f"日志文件路径: {log_file}")
-        logger.info("日志轮转配置: 单个文件最大10MB，保留最近5个文件")
-        
-        # 初始化并运行日志清理器
-        try:
-            cleaner = LogCleaner(log_dir=log_dir, retention_days=30)
-            disk_usage = cleaner.get_disk_usage()
-            if disk_usage is not None:
-                logger.info(f"当前日志目录使用空间: {disk_usage:.2f}MB")
-            
-            if cleaner.clean_old_logs():
-                logger.info("日志清理完成")
-            else:
-                logger.warning("日志清理过程中出现错误")
-        except Exception as e:
-            logger.error(f"运行日志清理器时出错: {str(e)}")
-
-        # 执行日志系统健康检查
-        try:
-            checker = LogChecker(log_dir=log_dir)
-            health_status = checker.perform_health_check()
-            
-            if health_status["is_healthy"]:
-                logger.info("日志系统健康检查通过")
-            else:
-                logger.warning("日志系统健康检查发现问题")
-                logger.warning(f"健康检查详细报告: {json.dumps(health_status, ensure_ascii=False, indent=2)}")
-        except Exception as e:
-            logger.error(f"执行日志系统健康检查时出错: {str(e)}")
-        
-        return logger
-    except Exception as e:
-        print(f"配置日志系统失败: {str(e)}")
-        sys.exit(1)
+        logger.error(f"运行日志清理器时出错: {str(e)}")
+    
+    return logger
 
 # 初始化日志系统
 logger = setup_logging()
@@ -284,7 +243,7 @@ class LeadsInsight:
 
             return True
         except Exception as e:
-            logger.error(f"删除{self.elementor_db_dir}目录中的 submission_*.json文件\Elementor_DB_*.json文件\retry_*目录下所有文件时出错: {str(e)}")
+            logger.error(f"删除{self.elementor_db_dir}目录中的 submission_*.json文件\\Elementor_DB_*.json文件\\retry_*目录下所有文件时出错: {str(e)}")
             return False
     
     def copy_files_to_hktlora_sales_leads(self) -> bool:

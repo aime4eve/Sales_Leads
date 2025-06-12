@@ -21,9 +21,11 @@ import random
 # 导入超时配置
 from hkt_agent_framework.DingTalk.timeout_config import get_timeout, get_error_message, get_retry_strategy
 
-# 配置日志记录
-logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger("DingTalk")
+# 获取DingTalk的日志记录器并设置级别
+logger = logging.getLogger(__name__)
+# 使用根日志记录器的级别
+root_logger = logging.getLogger()
+logger.setLevel(root_logger.level)
 
 # 定义重试装饰器
 def retry_with_backoff(max_retries=3, initial_backoff=1, max_backoff=30, backoff_factor=2, retryable_errors=(requests.exceptions.Timeout, requests.exceptions.ConnectionError)):
@@ -93,6 +95,12 @@ class DingTalk:
             config_dict (dict, optional): 配置字典
         """
         try:
+            # 设置日志记录器
+            self.logger = logging.getLogger(__name__)
+            # 使用根日志记录器的级别
+            root_logger = logging.getLogger()
+            self.logger.setLevel(root_logger.level)
+            
             # 配置信息可以从参数传入的字典、指定路径的配置文件或默认位置的配置文件获取
             config = {}
             

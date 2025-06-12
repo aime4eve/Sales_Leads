@@ -54,10 +54,14 @@ class HKTLoraWeb:
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         file_handler = logging.FileHandler(self.log_file, encoding='utf-8')
         file_handler.setFormatter(formatter)
-        file_handler.setLevel(logging.INFO)
+        
+        # 使用根日志记录器的级别
+        root_logger = logging.getLogger()
+        file_handler.setLevel(root_logger.level)
         
         self.logger.addHandler(file_handler)
-        self.logger.setLevel(logging.INFO)
+        # 继承根日志记录器的级别
+        self.logger.setLevel(root_logger.level)
 
     def _close_logging(self):
         """关闭所有日志处理器"""
@@ -325,7 +329,7 @@ class HKTLoraWeb:
                 if not table:
                     self.tqdm_error("未找到目标表格")
                     return False
-                self.tqdm_info("表格已加载")
+                # self.tqdm_info("表格已加载")
             except Exception as e:
                 self.tqdm_error(f"等待表格超时: {str(e)}")
                 return False
@@ -336,7 +340,7 @@ class HKTLoraWeb:
                 if not rows:
                     self.tqdm_error("表格中没有找到数据行")
                     return False
-                self.tqdm_info(f"找到 {len(rows)} 行数据")
+                # self.tqdm_info(f"找到 {len(rows)} 行数据")
             except Exception as e:
                 self.tqdm_error(f"获取表格行时出错: {str(e)}")
                 return False
@@ -352,7 +356,7 @@ class HKTLoraWeb:
                     if not headers:
                         self.tqdm_error("未找到表头")
                         return False
-                    self.tqdm_info(f"找到表头: {headers}")
+                    # self.tqdm_info(f"找到表头: {headers}")
                     continue
 
                 # 数据行
@@ -408,7 +412,7 @@ class HKTLoraWeb:
             try:
                 with open(table_output_file, 'w', encoding='utf-8') as f:
                     json.dump(table_data, f, ensure_ascii=False, indent=2)
-                self.tqdm_info(f"表格数据已保存到: {table_output_file}")
+                # self.tqdm_info(f"表格数据已保存到: {table_output_file}")
             except IOError as e:
                 self.tqdm_error(f"保存表格数据时出错: {str(e)}")
                 return False
@@ -444,7 +448,7 @@ class HKTLoraWeb:
 
                         # 保存提交记录数据
                         if self.save_submission_data(page, link, self.CURRENT_OUTPUT_DIR):
-                            self.tqdm_info(f"成功保存提交记录: {link}")
+                            # self.tqdm_info(f"成功保存提交记录: {link}")
                             processed_count += 1
                         else:
                             self.tqdm_warning(f"保存提交记录失败: {link}")
