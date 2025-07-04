@@ -15,8 +15,8 @@
             "get_department_listsub": "https://oapi.dingtalk.com/topapi/v2/department/listsub?access_token={access_token}&dept_id={dept_id}",
             "get_user_list_by_department": "https://oapi.dingtalk.com/topapi/v2/user/list?access_token={access_token}&dept_id={dept_id}&cursor={cursor}&size={size}"
         },
-        "access_token": "e91d1ef6c0a13cf7b6888a80cf281105",
-        "access_token_expires": 1749615721
+        "access_token": "ec2d2efb86713416abaec42c8ac25f6c",
+        "access_token_expires": 1751598857
     },
     "dify": {
         "worktime_Estimate": "app-hLaaGPbI4SoCcEzV89vKBsYo",

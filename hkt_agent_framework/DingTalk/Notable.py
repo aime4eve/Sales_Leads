@@ -23,15 +23,8 @@ import random
 import sys
 # 导入超时配置
 from .timeout_config import get_timeout, get_error_message, get_timeout_tuple, get_retry_strategy
-
-def countdown(seconds):
-    """倒计时显示函数"""
-    for i in range(seconds, 0, -1):
-        sys.stdout.write(f'\r等待下一次同步，还剩 {i} 秒...   ')
-        sys.stdout.flush()
-        time.sleep(1)
-    sys.stdout.write('\r' + ' ' * 50 + '\r')  # 清除倒计时显示
-    sys.stdout.flush()
+# 导入Tools.py
+from ..Tools import countdown
 
 # 定义重试装饰器
 def retry_with_backoff(max_retries=3, initial_backoff=1, max_backoff=30, backoff_factor=2, retryable_errors=(requests.exceptions.Timeout, requests.exceptions.ConnectionError)):
@@ -138,6 +131,7 @@ class Notable:
             self.logger.error(f"加载配置文件时出错：{str(e)}")
             self.logger.error(traceback.format_exc())
             raise
+  
     
     def _find_sheet_id(self, sheet_name, definition_file="notable_definition.json"):
         """
@@ -649,7 +643,7 @@ class Notable:
             max_page_retries = 5  # 每页最大重试次数
             
             # 初始化进度条，但不确定总页数，所以使用不确定模式
-            with tqdm(desc="获取表格记录", unit="页") as pbar:
+            with tqdm(desc="获取表格记录", unit="页",leave=False) as pbar:
                 while hasMore:
                     # 构建分页参数
                     pagination_url = url
@@ -816,8 +810,9 @@ class Notable:
                             break
                     
                     # 添加延迟，避免请求过于频繁触发限流
-                    if hasMore:
-                        time.sleep(30)  # 每页请求间隔0.5秒
+                    if hasMore:                        
+                        countdown(5,10,msg='等待下一次同步',new_line=True)
+                        # time.sleep(30)  # 每页请求间隔0.5秒
                     if not hasMore:
                         # logger.info("没有更多页面，记录获取完毕")
                         break
@@ -870,11 +865,11 @@ class Notable:
                              'lastModifiedTime' in local_records_dict[record_id] and 
                              record['lastModifiedTime'] > local_records_dict[record_id]['lastModifiedTime'])):
                             
-                            # 添加或重置AI核定相关字段
-                            record.update({
-                                "需要AI核定": True,
-                                "需要上传推理结论": False
-                            })
+                            # # 添加或重置AI核定相关字段
+                            # record.update({
+                            #     "需要AI核定": True,
+                            #     "需要上传推理结论": False
+                            # })
 
                             dingding_count += 1
                             
@@ -885,11 +880,11 @@ class Notable:
                         else:
                             # 如果本地记录已是最新，保留本地的AI核定字段
                             local_record = local_records_dict[record_id]
-                            for field in ["需要AI核定"]:
-                                if field in local_record:
-                                    record[field] = local_record[field]
-                                else:
-                                    record[field] = None if field != "需要AI核定" else True
+                            # for field in ["需要AI核定"]:
+                            #     if field in local_record:
+                            #         record[field] = local_record[field]
+                            #     else:
+                            #         record[field] = None if field != "需要AI核定" else True
                             
                             local_count += 1
                             self.logger.debug(f"记录 {record_id} 未更新，保留本地AI核定字段")

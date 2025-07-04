@@ -7,6 +7,7 @@ import os
 import argparse
 from datetime import datetime
 from pathlib import Path
+import glob
 
 # 导入版本模块
 try:
@@ -36,6 +37,14 @@ except ImportError as e:
     logging.error(f"导入 LeadsInsight 失败: {str(e)}")
     raise
 
+# 导入Tools模块中的countdown方法
+try:
+    from hkt_agent_framework.Tools import countdown
+    logging.info("成功导入 Tools.countdown")
+except ImportError as e:
+    logging.error(f"导入 Tools.countdown 失败: {str(e)}")
+
+
 
 class SimpleConfig:
     """简化的配置管理器"""
@@ -58,19 +67,32 @@ class SimpleConfig:
     
     def _get_default_config(self):
         """获取默认配置"""
-        return {
+        """获取默认配置并保存到本地json文件"""
+        default_config = {
             "task_params": {
-                "sync_top_pages": 1,
-                "task_interval_seconds": 180,  
-                "refresh_wait_seconds": 5,    
-                "extract_wait_seconds": 15,    
-                "leads_wait_seconds": 20       
+                "sync_top_pages": 3,           # 每次同步的页面数量
+                "task_interval_seconds": 120,  # 任务间隔时间（秒）
+                "refresh_wait_seconds": 5,     # 页面刷新后等待时间（秒）
+                "extract_wait_seconds": 15,    # URL提取后等待时间（秒）
+                "leads_wait_seconds": 20,      # 处理销售线索后等待时间（秒）
+                "max_run_count":3              # 每轮任务最多刷新次数 
             },
             "logging": {
-                "level": "ERROR",
-                "log_dir": "logs"
+                "level": "ERROR",              # 日志级别：DEBUG, INFO, WARNING, ERROR, CRITICAL
+                "log_dir": "logs"              # 日志文件目录
             }
         }
+        
+        # 如果配置文件不存在，则创建默认配置文件
+        if not os.path.exists(self.config_file):
+            try:
+                with open(self.config_file, 'w', encoding='utf-8') as f:
+                    json.dump(default_config, f, indent=4, ensure_ascii=False)
+                logging.info(f"已创建默认配置文件: {self.config_file}")
+            except Exception as e:
+                logging.error(f"创建默认配置文件失败: {str(e)}")
+                
+        return default_config
     
     def get(self, key, default=None):
         """获取配置值"""
@@ -87,7 +109,7 @@ class SimpleConfig:
 class SyncHKTLora:
     """简化的HKTLora同步程序"""
     
-    def __init__(self, config_file='task_config.json'):
+    def __init__(self, config_file='task_config.json', init_mode=True):
         self.running = True
         self.config = SimpleConfig(config_file)
         self.hkt_web = None
@@ -95,6 +117,8 @@ class SyncHKTLora:
         self.browser = None
         self.page = None
         self.leads_insight = None
+        self.init_mode = init_mode
+        self.run_count = 0
         
         # 注册信号处理
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -107,21 +131,47 @@ class SyncHKTLora:
         logging.info("收到退出信号，正在清理资源...")
         self.running = False
         self._cleanup()
+        self.hkt_web = None
+        self.leads_insight = None        
         logging.info("程序已退出")
         sys.exit(0)
     
     def _cleanup(self):
         """清理资源"""
         try:
-            if self.page:
-                self.page.close()
-            if self.browser:
-                self.browser.close()
-            if self.playwright:
-                self.playwright.stop()
+            self.run_count = 0
+            self._destroy_browser()
             logging.info("资源清理完成")
         except Exception as e:
             logging.error(f"清理资源时出错: {str(e)}")
+    
+    def _destroy_browser(self):
+        """安全销毁浏览器资源"""
+        try:
+            logging.info("正在销毁浏览器资源...")
+            
+            if self.page:
+                logging.info("正在关闭页面...")
+                self.page.close()
+                self.page = None
+                
+            if self.browser:
+                logging.info("正在关闭浏览器...")
+                self.browser.close()
+                self.browser = None
+                
+            if self.playwright:
+                logging.info("正在停止Playwright...")
+                self.playwright.stop()
+                self.playwright = None
+                
+            logging.info("浏览器资源销毁完成")
+        except Exception as e:
+            logging.error(f"销毁浏览器资源时出错: {str(e)}")
+            # 即使出错也尝试将资源设为None
+            self.page = None
+            self.browser = None
+            self.playwright = None
     
     def _initialize_browser(self):
         """初始化浏览器"""
@@ -186,6 +236,10 @@ class SyncHKTLora:
             self.leads_insight = LeadsInsight()
             if not self.leads_insight:
                 raise Exception("LeadsInsight初始化失败")
+            elif self.init_mode:
+                print("正在初始化DingTalk多维表销售线索数据...")
+                if not self.leads_insight.process_with_initialization(initialize_first=True):
+                    raise Exception("DingTalk多维表初始化失败")
             
             # 确保所有组件的日志记录器使用相同的级别
             logging.getLogger("HKTLoraWeb").setLevel(log_level)
@@ -229,24 +283,6 @@ class SyncHKTLora:
             logging.error(f"登录失败: {str(e)}")
             return False
     
-    def _refresh_pages(self):
-        """刷新页面"""
-        try:
-            logging.info("开始刷新页面...")
-            
-            sync_top_pages = self.config.get('task_params.sync_top_pages', 1)
-            result = self.hkt_web.do_refresh_pages(self.page, sync_top_pages)
-            
-            if not result:
-                raise Exception("页面刷新失败")
-            
-            logging.info("页面刷新完成")
-            return True
-            
-        except Exception as e:
-            logging.error(f"页面刷新失败: {str(e)}")
-            return False
-    
     def _extract_failed_urls(self):
         """提取失败的URL"""
         try:
@@ -272,6 +308,7 @@ class SyncHKTLora:
             logging.info("开始处理销售线索...")
             
             result = self.leads_insight.process()
+                
             if not result:
                 raise Exception("销售线索处理失败")
             
@@ -281,115 +318,86 @@ class SyncHKTLora:
         except Exception as e:
             logging.error(f"处理销售线索失败: {str(e)}")
             return False
-    def countdown(self,seconds):
-        """倒计时显示函数"""
-        for i in range(seconds, 0, -1):
-            sys.stdout.write(f'\r还剩 {i} 秒...   ')
-            sys.stdout.flush()
-            time.sleep(1)
-        sys.stdout.write('\r' + ' ' * 50 + '\r')  # 清除倒计时显示
-        sys.stdout.flush()
-        
-    def _task_loop(self):
-        """内层任务循环"""
-        logging.info("开始任务循环...")
-        
-        while self.running:
-            try:
-                # 任务1：刷新页面
-                if not self._refresh_pages():
-                    logging.error("刷新页面失败，退出程序")
-                    return False
-                
-                # 等待
-                refresh_wait = self.config.get('task_params.refresh_wait_seconds', 30)
-                logging.info(f"刷新完成，等待 {refresh_wait} 秒...")
-                self.countdown(refresh_wait)
-                # time.sleep(refresh_wait)
-                
-                if not self.running:
-                    break
-                
-                # 任务2：提取失败的URL
-                if not self._extract_failed_urls():
-                    logging.error("提取失败URL失败，退出程序")
-                    return False
-                
-                # 等待
-                extract_wait = self.config.get('task_params.extract_wait_seconds', 60)
-                logging.info(f"URL提取完成，等待 {extract_wait} 秒...")
-                self.countdown(extract_wait)
-                # time.sleep(extract_wait)
-                
-                if not self.running:
-                    break
-                
-                # 任务3：处理销售线索
-                if not self._process_leads():
-                    logging.error("处理销售线索失败，退出程序")
-                    return False
-                
-                # 等待下一轮
-                leads_wait = self.config.get('task_params.leads_wait_seconds', 90)
-                logging.info(f"销售线索处理完成，等待 {leads_wait} 秒后开始下一轮...")
-                self.countdown(leads_wait)
-                # time.sleep(leads_wait)
-                
-            except Exception as e:
-                logging.error(f"任务循环中出现错误: {str(e)}")
-                return False
-        
-        return True
-    
+
     def run(self):
-        """主循环"""
-        logging.info("开始主循环...")
-        
-        while self.running:
-            try:
-                # 先初始化组件
-                if not self._initialize_components():
-                    logging.error("组件初始化失败，退出程序")
-                    break
-                
-                # 再初始化浏览器（需要使用组件中的认证信息）
-                if not self._initialize_browser():
-                    logging.error("浏览器初始化失败，退出程序")
-                    break
-                
-                # 登录
-                if not self._login():
-                    logging.error("登录失败，退出程序")
-                    break
-                
-                logging.info("登录成功，进入任务循环...")
-                
-                # 进入任务循环
-                if not self._task_loop():
-                    logging.error("任务循环失败，退出程序")
-                    break
-                
-            except Exception as e:
-                logging.error(f"主循环中出现错误: {str(e)}")
-                break
-            finally:
-                # 清理当前会话的资源
+        is_first_run = True
+                      
+        while self.running:        
+            """主循环"""
+            if not is_first_run:
+                self.init_mode = False
+            
+            is_first_run = False            
+            self.run_count = 0
+            logging.info("开始主循环...")
+            
+            # 初始化组件
+            if not self._initialize_components():
+                logging.error("组件初始化失败，退出程序")
+                return
+            
+            # 初始化浏览器（需要使用组件中的认证信息）
+            if not self._initialize_browser():
+                logging.error("浏览器初始化失败，退出程序")
+                return
+            
+            # 登录
+            if not self._login():
+                logging.error("登录失败，退出程序")
+                return
+            
+            logging.info("初始化完成，进入任务循环...")                        
+            
+            while self.run_count < self.config.get('task_params.max_run_count',30):
                 try:
-                    if self.page:
-                        self.page.close()
-                        self.page = None
-                    if self.browser:
-                        self.browser.close()
-                        self.browser = None
-                    if self.playwright:
-                        self.playwright.stop()
-                        self.playwright = None
-                except:
-                    pass
-        
-        # 最终清理
-        self._cleanup()
-        logging.info("主循环结束")
+                    self.run_count += 1                    
+                    # 任务1：刷新页面，获取新线索
+                    sync_top_pages = self.config.get('task_params.sync_top_pages', 1)
+                    if not self.hkt_web.do_refresh_pages(self.page, sync_top_pages):
+                        logging.error("刷新页面时出错，将在60秒后重试...")
+                        countdown(60, 60, "刷新页面失败", new_line=True)
+                        continue
+
+                    # 检查是否有新线索
+                    output_dir = self.hkt_web.CURRENT_OUTPUT_DIR
+                    submission_files = glob.glob(os.path.join(output_dir, "submission_*.json"))
+                    
+                    if not submission_files:
+                        # 没有新线索，等待长周期
+                        interval = self.config.get('task_params.task_interval_seconds', 180)
+                        if interval < 60:
+                            interval = 60
+                        logging.info(f"没有发现新的销售线索，等待 {interval} 秒...")
+                        countdown(interval - 60, interval, f"等待第 {self.run_count+1} 轮刷新销售线索", new_line=True)
+                        continue
+
+                    logging.info(f"发现 {len(submission_files)} 条新线索，立即处理...")
+
+                    # 任务2：处理销售线索
+                    if not self._process_leads():
+                        logging.error("处理销售线索失败，将在60秒后重试...")
+                        countdown(60, 60, "处理线索失败", new_line=True)
+                        continue
+
+                    # 任务3：提取失败的URL (可以选择性运行)
+                    # self._extract_failed_urls()
+
+                    # 短暂等待后开始下一轮
+                    leads_wait = self.config.get('task_params.leads_wait_seconds', 20)
+                    logging.info(f"销售线索处理完成，等待 {leads_wait} 秒后开始下一轮...")
+                    countdown(leads_wait, leads_wait, f"等待第 {self.run_count+1} 开始", new_line=True)
+
+                except Exception as e:
+                    logging.error(f"主循环中出现错误: {str(e)}")
+                    self._cleanup()
+                    logging.info("出现严重错误，正在重启浏览器...")
+                    if not self._initialize_browser() or not self._login():
+                        logging.error("浏览器重启或重新登录失败，退出程序")
+                        break
+            
+            # 最终清理
+            self._cleanup()
+            logging.info("本次主循环结束")
 
 
 def setup_logging(config):
@@ -446,7 +454,8 @@ task_config.json 配置说明：
         "task_interval_seconds": 180,  # 任务间隔时间（秒），默认180秒
         "refresh_wait_seconds": 5,     # 刷新后等待时间（秒），默认5秒
         "extract_wait_seconds": 15,    # 提取后等待时间（秒），默认15秒
-        "leads_wait_seconds": 20       # 处理销售线索后等待时间（秒），默认20秒
+        "leads_wait_seconds": 20,      # 处理销售线索后等待时间（秒），默认20秒
+        "max_run_count":15              # 每轮任务最多刷新次数，默认15次
     },
     "logging": {
         "level": "ERROR",             # 日志级别：DEBUG, INFO, WARNING, ERROR, CRITICAL
@@ -477,6 +486,7 @@ def parse_arguments():
     parser.add_argument('--version', action='version', version=f'hkt-sales_leads {current_version}')
     parser.add_argument('--help-config', action='store_true', help='显示配置文件帮助信息')
     parser.add_argument('--config', '-c', type=str, default='task_config.json', help='配置文件路径')
+    parser.add_argument('--no-init', action='store_true', help='是否不先从钉钉多维表初始化本地数据')
     args = parser.parse_args()
     
     if args.help_config:
@@ -492,6 +502,7 @@ def main():
     # 设置日志
     config = SimpleConfig(args.config)
     log_file, log_level = setup_logging(config)
+
     
     # 显示版本号
     try:
@@ -505,9 +516,12 @@ def main():
     try:
         print("SyncHKTLora 启动中...")
         print("按 Ctrl+C 可退出程序")
+        print(f"日志文件: {log_file},日志级别: {log_level}")        
         
-        # 初始化并运行
-        sync = SyncHKTLora(args.config)
+        
+
+        # 初始化并运行，传入init参数
+        sync = SyncHKTLora(args.config, init_mode=not args.no_init)
         sync.run()
         
         return 0

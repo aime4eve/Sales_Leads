@@ -14,6 +14,14 @@ from logging.handlers import RotatingFileHandler
 from log_cleaner import LogCleaner
 from log_checker import LogChecker
 
+# 导入Tools模块中的countdown方法
+try:
+    from hkt_agent_framework.Tools import countdown
+    logging.info("成功导入 Tools.countdown")
+except ImportError as e:
+    logging.error(f"导入 Tools.countdown 失败: {str(e)}")
+
+
 def setup_logging():
     """设置日志配置"""
     # 确保日志目录存在
@@ -159,15 +167,6 @@ class LeadsInsight:
             logger.error(f"初始化Notable对象失败: {str(e)}")
             raise
     
-    def countdown(self, seconds):
-        """倒计时显示函数"""
-        for i in range(seconds, 0, -1):
-            sys.stdout.write(f'\r等待下一次评估，还剩 {i} 秒...   ')
-            sys.stdout.flush()
-            time.sleep(1)
-        sys.stdout.write('\r' + ' ' * 50 + '\r')  # 清除倒计时显示
-        sys.stdout.flush()
-
     def _find_latest_directory(self, base_dir: str, pattern: str) -> Optional[str]:
         """
         按照指定模式查找最新的目录
@@ -210,7 +209,7 @@ class LeadsInsight:
                 logger.info(f"找到最新的目录: {latest_dir}")
                 return os.path.join(base_dir, latest_dir)
             
-            logger.warning(f"未找到符合模式 {pattern} 的目录")
+            # logger.warning(f"未找到符合模式 {pattern} 的目录")
             return None
         
         except Exception as e:
@@ -244,6 +243,143 @@ class LeadsInsight:
             return True
         except Exception as e:
             logger.error(f"删除{self.elementor_db_dir}目录中的 submission_*.json文件\\Elementor_DB_*.json文件\\retry_*目录下所有文件时出错: {str(e)}")
+            return False
+    
+    def initialize_dingtalk_sales_leads(self) -> bool:
+        """
+        初始化dingtalk_sales_leads目录中的数据，从钉钉多维表同步到本地
+        
+        返回:
+            bool: 操作是否成功
+        """
+        try:
+            logger.info("开始初始化dingtalk_sales_leads目录中的数据")
+            
+            # 1. 确保输出目录存在
+            os.makedirs(self.dingtalk_sales_leads_dir, exist_ok=True)
+            logger.info(f"确保输出目录存在: {self.dingtalk_sales_leads_dir}")
+            
+            # 删除dingtalk_sales_leads目录中的所有文件
+            for file in os.listdir(self.dingtalk_sales_leads_dir):
+                os.remove(os.path.join(self.dingtalk_sales_leads_dir, file))
+            
+            # 2. 获取多维表数据
+            logger.info(f"开始从钉钉多维表获取数据: {self.target_table_name}")
+            table_data = self.notable.get_table_records(
+                sheet_name=self.target_table_name,
+                save_to_file=False  # 不自动保存为单个文件
+            )
+            
+            # 3. 初始化统计信息
+            stats = {
+                "total": 0,
+                "created": 0,
+                "updated": 0,
+                "skipped": 0,
+                "errors": 0
+            }
+            
+            # 获取记录总数
+            records = table_data.get("records", [])
+            total_records = len(records)
+            logger.info(f"从钉钉多维表获取到 {total_records} 条记录")
+            
+            # 4. 遍历记录并保存
+            from tqdm import tqdm
+            with tqdm(total=total_records, desc="同步进度", unit="条",leave=False) as pbar:
+                for record in records:
+                    try:
+                        # 提取记录ID和字段
+                        record_id = record.get("id")
+                        fields = record.get("fields", {})
+                        
+                        # 提取编号
+                        post_id = fields.get("编号")
+                        if not post_id:
+                            logger.warning(f"记录 {record_id} 缺少编号字段，跳过")
+                            stats["skipped"] += 1
+                            pbar.update(1)
+                            continue
+                        
+                        # 构造输出文件路径
+                        output_file = os.path.join(self.dingtalk_sales_leads_dir, f"submission_{post_id}.json")
+                        
+                        # 构造输出数据
+                        output_data = {
+                            "form_submission": {
+                                "Name": fields.get("客户", ""),
+                                "Email": fields.get("电子邮件", ""),
+                                "Country": fields.get("国家", ""),
+                                "WhatsApp": fields.get("通讯号码", ""),
+                                "Message": fields.get("留言内容", ""),
+                                "Date of Submission": fields.get("留言日期", "")
+                            },
+                            "extra_information": {
+                                "Submitted On": {
+                                    "links": [
+                                        {
+                                            "text": "View Page",
+                                            "href": fields.get("留言位置", "")
+                                        },
+                                        {
+                                            "text": "Edit Page",
+                                            "href": f"https://www.hktlora.com/wp-admin/post.php?action=edit&post={post_id}"
+                                        }
+                                    ],
+                                    "full_text": "Quote (View Page | Edit Page)"
+                                },
+                                "Submitted By": "Not a registered user"
+                            },
+                            "dingding": {
+                                "id": record_id,
+                                "编号": post_id
+                            }
+                        }
+                        
+                        # 检查文件是否已存在
+                        if os.path.exists(output_file):
+                            stats["updated"] += 1
+                        else:
+                            stats["created"] += 1
+                        
+                        # 保存到文件
+                        with open(output_file, 'w', encoding='utf-8') as f:
+                            json.dump(output_data, f, ensure_ascii=False, indent=4)
+                        
+                        stats["total"] += 1
+                        
+                    except Exception as e:
+                        logger.error(f"处理记录 {record.get('id', '未知ID')} 时出错: {str(e)}")
+                        logger.debug(traceback.format_exc())
+                        stats["errors"] += 1
+                    
+                    # 更新进度条
+                    pbar.update(1)
+                    pbar.set_postfix({
+                        "新建": stats["created"],
+                        "更新": stats["updated"],
+                        "跳过": stats["skipped"],
+                        "错误": stats["errors"]
+                    })
+            
+            # 打印统计信息
+            logger.info(f"同步完成: 总记录数 {stats['total']}, 新创建 {stats['created']}, 更新 {stats['updated']}, 跳过 {stats['skipped']}, 错误 {stats['errors']}")
+            
+            # 检查是否有错误
+            if stats["errors"] > 0:
+                logger.warning(f"同步过程中有 {stats['errors']} 条记录出错")
+            
+            # 检查是否有记录
+            if stats["total"] == 0:
+                logger.warning("没有从钉钉多维表获取到任何记录")
+                if stats["errors"] > 0:
+                    return False
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"初始化dingtalk_sales_leads目录中的数据时出错: {str(e)}")
+            logger.error(traceback.format_exc())
             return False
     
     def copy_files_to_hktlora_sales_leads(self) -> bool:
@@ -638,7 +774,7 @@ class LeadsInsight:
                     with open(failure_file, "w", encoding="utf-8") as f:
                         json.dump(failure_records, f, ensure_ascii=False, indent=4)
                 
-                self.countdown(10)
+                countdown(10, 10, "等待下一次同步",new_line=False)
 
             logger.info(f"同步处理完成: {success_count} 条成功, {failure_count} 条失败。")
             
@@ -770,16 +906,81 @@ class LeadsInsight:
             logger.error(f"LeadsInsight处理流程出错: {str(e)}")
             logger.error(f"详细错误: {traceback.format_exc()}")
             return False
+            
+    def process_with_initialization(self, initialize_first=False) -> bool:
+        """
+        执行完整的处理流程，包括可选的初始化步骤
+        
+        参数:
+            initialize_first (bool): 是否先初始化dingtalk_sales_leads目录中的数据
+            
+        返回:
+            bool: 操作是否成功
+        """
+        try:
+            logger.info("开始执行LeadsInsight处理流程(包含初始化)")
+            
+            # 可选步骤: 初始化dingtalk_sales_leads目录中的数据
+            if initialize_first:
+                logger.info("执行初始化步骤: 从钉钉多维表同步数据到本地")
+                if not self.initialize_dingtalk_sales_leads():
+                    logger.error("初始化步骤失败: 无法从钉钉多维表同步数据到本地")
+                    # 这里不直接返回False，因为初始化步骤是可选的
+                    logger.warning("尽管初始化失败，但将继续执行后续步骤")
+            
+            # 执行标准处理流程
+            return self.process()
+            
+        except Exception as e:
+            logger.error(f"LeadsInsight处理流程(包含初始化)出错: {str(e)}")
+            logger.error(f"详细错误: {traceback.format_exc()}")
+            return False
+
 
 
 # 测试代码
 if __name__ == "__main__":
     try:
+        import argparse
+        
+        # 创建命令行参数解析器
+        parser = argparse.ArgumentParser(description='执行LeadsInsight处理流程')
+        parser.add_argument(
+            '--init',
+            action='store_true',
+            help='是否先从钉钉多维表初始化本地数据'
+        )
+        parser.add_argument(
+            '--config', 
+            type=str, 
+            default=None,
+            help='Notable配置文件路径，默认使用LeadsInsight的默认配置'
+        )
+        parser.add_argument(
+            '--table', 
+            type=str, 
+            default="资源池",
+            help='钉钉多维表中的表格名称'
+        )
+        parser.add_argument(
+            '--dir', 
+            type=str, 
+            default="elementor_db_sync",
+            help='elementor_db_sync目录路径'
+        )
+        
+        # 解析命令行参数
+        args = parser.parse_args()
+        
         # 创建LeadsInsight实例
-        leads_insight = LeadsInsight()
+        leads_insight = LeadsInsight(
+            elementor_db_dir=args.dir,
+            notable_config_path=args.config,
+            target_table_name=args.table
+        )
         
         # 执行处理流程
-        success = leads_insight.process()
+        success = leads_insight.process_with_initialization(initialize_first=args.init)
         
         if success:
             print("LeadsInsight处理流程成功完成")
@@ -788,3 +989,5 @@ if __name__ == "__main__":
             
     except Exception as e:
         print(f"程序执行出错: {str(e)}")
+        logger.error(f"程序执行出错: {str(e)}")
+        logger.error(traceback.format_exc())

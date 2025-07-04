@@ -1,10 +1,12 @@
 {
   "task_params": {
-    "sync_top_pages": 1,
-    "task_interval_seconds": 180,  
+    "sync_top_pages": 10,
+    "task_interval_seconds": 120,
     "refresh_wait_seconds": 5,    
     "extract_wait_seconds": 15,    
-    "leads_wait_seconds": 20       
+    "leads_wait_seconds": 20,
+    "max_run_count":15
+
   },
   "logging": {
     "level": "ERROR",
