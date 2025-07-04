@@ -697,8 +697,8 @@ class HKTLoraWeb:
                         next_page_url = f"{base_url}?paged={next_page_num}"
 
                     # 更新进度条
-                    page_pbar.set_description(f"{Fore.BLUE}处理第 {next_page_num}/{total_pages} 页{Style.RESET_ALL}")
-                    page_pbar.update(1)                             
+                    # page_pbar.set_description(f"{Fore.BLUE}处理第 {next_page_num}/{total_pages} 页{Style.RESET_ALL}")
+                    # page_pbar.update(1)                             
 
                     # 导航到下一页并提取数据
                     success, current_url, total_pages, current_page, continue_process = self.download_url(
