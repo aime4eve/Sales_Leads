@@ -8,6 +8,7 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 import glob
+import traceback
 
 # 导入版本模块
 try:
@@ -128,19 +129,19 @@ class SyncHKTLora:
     
     def _signal_handler(self, signum, frame):
         """处理Ctrl+C信号"""
-        logging.info("收到退出信号，正在清理资源...")
-        self.running = False
         self._cleanup()
-        self.hkt_web = None
-        self.leads_insight = None        
         logging.info("程序已退出")
         sys.exit(0)
     
     def _cleanup(self):
         """清理资源"""
         try:
+            logging.info("收到退出信号，正在清理资源...")            
             self.run_count = 0
+            self.running = False
             self._destroy_browser()
+            self.hkt_web = None
+            self.leads_insight = None        
             logging.info("资源清理完成")
         except Exception as e:
             logging.error(f"清理资源时出错: {str(e)}")
@@ -175,6 +176,84 @@ class SyncHKTLora:
     
     def _initialize_browser(self):
         """初始化浏览器"""
+        # 如果程序被打包，则强制指定Playwright浏览器的路径
+        if getattr(sys, 'frozen', False):
+            # 尝试使用打包的浏览器路径
+            bundle_dir = os.path.dirname(sys.executable)
+            bundled_browser_path = os.path.join(bundle_dir, 'playwright', 'driver', 'package', '.local-browsers')
+            
+            # 调试信息
+            logging.info(f"程序已打包，尝试查找浏览器...")
+            logging.info(f"可执行文件目录: {bundle_dir}")
+            logging.info(f"预期浏览器路径: {bundled_browser_path}")
+            
+            # 检查是否有打包的Chromium浏览器
+            chromium_found = False
+            if os.path.exists(bundled_browser_path):
+                logging.info(f"浏览器目录存在: {bundled_browser_path}")
+                # 列出目录内容
+                browser_files = os.listdir(bundled_browser_path)
+                logging.info(f"浏览器目录内容: {browser_files}")
+                
+                # 检查是否有Chromium浏览器文件
+                chromium_paths = glob.glob(os.path.join(bundled_browser_path, "chromium-*"))
+                if chromium_paths:
+                    chromium_found = True
+                    os.environ['PLAYWRIGHT_BROWSERS_PATH'] = bundled_browser_path
+                    logging.info(f"使用打包的Chromium浏览器: {chromium_paths[0]}")
+                    # 强制设置环境变量
+                    os.environ['PLAYWRIGHT_BROWSERS_PATH'] = bundled_browser_path
+                    # 打印环境变量确认
+                    logging.info(f"设置环境变量 PLAYWRIGHT_BROWSERS_PATH={os.environ.get('PLAYWRIGHT_BROWSERS_PATH')}")
+            else:
+                logging.warning(f"打包的浏览器目录不存在: {bundled_browser_path}")
+            
+            # 如果打包中没有找到浏览器，尝试使用本地安装的浏览器
+            if not chromium_found:
+                logging.info("在打包目录中未找到浏览器，尝试查找本地安装的浏览器")
+                browsers_path = os.path.join(os.environ.get('LOCALAPPDATA', ''), 'ms-playwright')
+                if os.path.exists(browsers_path):
+                    logging.info(f"本地浏览器目录存在: {browsers_path}")
+                    # 列出目录内容
+                    local_browser_files = os.listdir(browsers_path)
+                    logging.info(f"本地浏览器目录内容: {local_browser_files}")
+                    
+                    # 检查本地是否有Chromium浏览器
+                    chromium_paths = glob.glob(os.path.join(browsers_path, "chromium-*"))
+                    if chromium_paths:
+                        os.environ['PLAYWRIGHT_BROWSERS_PATH'] = browsers_path
+                        logging.info(f"使用本地安装的Chromium浏览器: {chromium_paths[0]}")
+                        chromium_found = True
+                        # 强制设置环境变量
+                        os.environ['PLAYWRIGHT_BROWSERS_PATH'] = browsers_path
+                        # 打印环境变量确认
+                        logging.info(f"设置环境变量 PLAYWRIGHT_BROWSERS_PATH={os.environ.get('PLAYWRIGHT_BROWSERS_PATH')}")
+                else:
+                    logging.warning(f"本地浏览器目录不存在: {browsers_path}")
+                
+                # 如果仍然没有找到浏览器，尝试直接使用当前目录
+                if not chromium_found:
+                    logging.info("尝试在当前目录查找浏览器")
+                    current_dir = os.path.dirname(os.path.abspath(sys.executable))
+                    # 递归搜索当前目录下的所有chromium-*目录
+                    for root, dirs, files in os.walk(current_dir):
+                        for dir_name in dirs:
+                            if dir_name.startswith("chromium-"):
+                                browser_dir = os.path.dirname(os.path.join(root, dir_name))
+                                logging.info(f"在当前目录找到浏览器: {os.path.join(root, dir_name)}")
+                                os.environ['PLAYWRIGHT_BROWSERS_PATH'] = browser_dir
+                                logging.info(f"设置环境变量 PLAYWRIGHT_BROWSERS_PATH={browser_dir}")
+                                chromium_found = True
+                                break
+                        if chromium_found:
+                            break
+                
+                # 如果仍然没有找到浏览器，提示安装
+                if not chromium_found:
+                    logging.error("未找到可用的Playwright Chromium浏览器，请运行install_browser.bat安装")
+                    print("\n错误: 未找到Playwright Chromium浏览器，请运行install_browser.bat安装\n")
+                    return False
+
         try:
             logging.info("正在初始化浏览器...")
             
@@ -195,7 +274,7 @@ class SyncHKTLora:
             
             # 创建上下文时包含HTTP认证信息
             context_options = {
-                "viewport": {"width": 1920, "height": 1080},
+                "viewport": {"width": 1024, "height": 768},
                 "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
                 "ignore_https_errors": True,
                 "bypass_csp": True
@@ -216,6 +295,8 @@ class SyncHKTLora:
             
         except Exception as e:
             logging.error(f"初始化浏览器失败: {str(e)}")
+            traceback_info = traceback.format_exc()
+            logging.error(f"详细错误信息: {traceback_info}")
             return False
     
     def _initialize_components(self):
@@ -247,6 +328,7 @@ class SyncHKTLora:
             logging.getLogger("DingTalk").setLevel(log_level)
             logging.getLogger("Notable").setLevel(log_level)
             logging.getLogger("LogCleaner").setLevel(log_level)
+            logging.getLogger("ConversationFlow").setLevel(log_level)
             
             logging.info("组件初始化成功")
             return True
@@ -334,17 +416,17 @@ class SyncHKTLora:
             # 初始化组件
             if not self._initialize_components():
                 logging.error("组件初始化失败，退出程序")
-                return
+                return False
             
             # 初始化浏览器（需要使用组件中的认证信息）
             if not self._initialize_browser():
                 logging.error("浏览器初始化失败，退出程序")
-                return
+                return False
             
             # 登录
             if not self._login():
                 logging.error("登录失败，退出程序")
-                return
+                return False
             
             logging.info("初始化完成，进入任务循环...")                        
             
@@ -397,7 +479,10 @@ class SyncHKTLora:
             
             # 最终清理
             self._cleanup()
+            self.run_count = 0
+            self.running = True            
             logging.info("本次主循环结束")
+        return True
 
 
 def setup_logging(config):
@@ -480,13 +565,13 @@ def parse_arguments():
         import version
         current_version = version.get_version()
     except Exception:
-        current_version = 'v0.6.1'  # 默认版本号
+        current_version = 'v0.9.1'  # 默认版本号
         
     parser = argparse.ArgumentParser(description='HKT Sales Leads Sync Tool')
     parser.add_argument('--version', action='version', version=f'hkt-sales_leads {current_version}')
     parser.add_argument('--help-config', action='store_true', help='显示配置文件帮助信息')
     parser.add_argument('--config', '-c', type=str, default='task_config.json', help='配置文件路径')
-    parser.add_argument('--no-init', action='store_true', help='是否不先从钉钉多维表初始化本地数据')
+    parser.add_argument('--dingtalk', action='store_true', help='是否先从钉钉多维表初始化本地数据')
     args = parser.parse_args()
     
     if args.help_config:
@@ -521,8 +606,14 @@ def main():
         
 
         # 初始化并运行，传入init参数
-        sync = SyncHKTLora(args.config, init_mode=not args.no_init)
-        sync.run()
+        while True:
+            sync = SyncHKTLora(args.config, init_mode=args.dingtalk)
+            if not sync.run():                
+                sync._cleanup()   
+                countdown(10, 10, "程序将在10秒后重新启动", new_line=True)
+                continue
+            else:
+                break
         
         return 0
         

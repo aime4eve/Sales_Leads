@@ -1,0 +1,66 @@
+# -*- mode: python ; coding: utf-8 -*-
+import os
+import sys
+from pathlib import Path
+import site
+
+# 获取playwright核心组件路径
+try:
+    import playwright
+    playwright_path = Path(playwright.__file__).parent
+except ImportError:
+    # 如果无法导入，使用默认路径
+    site_packages = site.getsitepackages()[1]  # 修改为使用第二个路径
+    playwright_path = Path(site_packages) / "playwright"
+
+# 浏览器路径 - 只包含Chromium (最小化打包)
+browser_path = Path(os.environ.get('LOCALAPPDATA', '')) / "ms-playwright"
+chromium_paths = list(browser_path.glob("chromium-*"))
+if chromium_paths:
+    chromium_path = chromium_paths[0]
+    include_browser = [(str(chromium_path), f"playwright/driver/package/.local-browsers/{chromium_path.name}")]
+else:
+    include_browser = []
+
+a = Analysis(
+    ['check_playwright.py'],
+    pathex=[],
+    binaries=[],
+    datas=[
+        # Playwright核心组件
+        (str(playwright_path / "driver"), "playwright/driver"),
+        (str(playwright_path / "__init__.py"), "playwright"),
+        (str(playwright_path / "sync_api"), "playwright/sync_api"),  # 修改为目录
+        (str(playwright_path / "async_api"), "playwright/async_api"),  # 修改为目录
+        # 浏览器文件 (如果找到)
+        *include_browser,
+    ],
+    hiddenimports=['playwright.sync_api'],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[],
+    noarchive=False,
+)
+pyz = PYZ(a.pure)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.datas,
+    [],
+    name='check_playwright',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,
+    console=True,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+) 

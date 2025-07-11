@@ -1,6 +1,6 @@
 {
   "task_params": {
-    "sync_top_pages": 10,
+    "sync_top_pages": 1,
     "task_interval_seconds": 120,
     "refresh_wait_seconds": 5,    
     "extract_wait_seconds": 15,    

@@ -1,0 +1,311 @@
+from openai import OpenAI
+from Prompt import Worktime_Estimate_Prompt
+import pandas as pd
+import random
+import re
+from ..Tools import countdown
+
+# 全局变量，用于保存上次输入的参数
+last_input = {
+    'user_name': '',
+    'project': '',
+    'task_type': '',
+    'task': '',
+    'work_output': '',
+    'actual_worktime': ''
+}
+
+def display_menu():
+    """显示操作菜单"""
+    menu_width = 80  # 菜单宽度
+    print("\n" + "=" * menu_width)
+    print(" " * 30 + "工时评估系统" + " " * 30)
+    print("=" * menu_width)
+    print("\n选择操作：")
+    print("┌" + "─" * (menu_width - 2) + "┐")
+    print("│ 1. 进行完整工时评估                                                          │")
+    print("│    • 输入所有参数（员工姓名、项目、任务类型、任务名称、实际工时、工作产出）  │")
+    print("│                                                                              │")
+    print("│ 2. 继续上次任务类型工时评估                                                  │")
+    print("│    • 仅输入：任务名称、实际工时和工作产出                                    │")
+    print("│    • 其他信息使用上次输入                                                    │")
+    print("│                                                                              │")
+    print("│ 3. 更改任务类型并评估                                                        │")
+    print("│    • 输入：任务类型、任务名称、实际工时和工作产出                            │")
+    print("│    • 其他信息使用上次输入                                                    │")
+    print("│                                                                              │")
+    print("│ 4. 更改项目和任务类型                                                        │")
+    print("│    • 输入：项目名称、任务类型、任务名称、实际工时和工作产出                  │")
+    print("│    • 其他信息使用上次输入                                                    │")
+    print("│                                                                              │")
+    print("│ 0. 退出系统                                                                  │")
+    print("└" + "─" * (menu_width - 2) + "┘")
+    print("\n提示：每个选项都支持多行输入，输入完成后单独一行输入'.'来结束当前输入")
+    print("=" * menu_width)
+
+def validate_input(value, field_name):
+    """验证输入值是否有效"""
+    if not value.strip():
+        raise ValueError(f"{field_name}不能为空！")
+    return value.strip()
+
+def get_user_input(mode=1):
+    """获取用户输入的参数
+    mode: 1=完整模式, 2=快速模式(继续上次任务类型), 3=更改任务类型模式, 4=更改项目和任务类型模式
+    """
+    global last_input
+    
+    print("\n请输入评估所需参数：")
+    print("(支持多行输入，输入完成后单独一行输入'.'来结束当前输入)")
+    try:
+        # 检查是否需要切换到完整模式
+        if mode in [2, 3, 4] and not last_input['user_name']:
+            print("\n未检测到员工姓名，自动切换到完整输入模式...")
+            mode = 1
+        
+        if mode == 1:  # 完整模式
+            print("\n请输入员工姓名：")
+            last_input['user_name'] = validate_input(get_multiline_input(), "员工姓名")
+            
+            print("\n请输入项目名称：")
+            last_input['project'] = validate_input(get_multiline_input(), "项目名称")
+            
+            print("\n请输入任务类型：")
+            last_input['task_type'] = validate_input(get_multiline_input(), "任务类型")
+        
+        elif mode in [2, 3, 4]:  # 快速模式、更改任务类型模式或更改项目和任务类型模式
+            print(f"\n使用上次输入的信息：")
+            print(f"员工姓名：{last_input['user_name']}")
+            
+            if mode == 4:  # 更改项目和任务类型模式
+                print("\n请输入新的项目名称：")
+                last_input['project'] = validate_input(get_multiline_input(), "项目名称")
+                print("\n请输入新的任务类型：")
+                last_input['task_type'] = validate_input(get_multiline_input(), "任务类型")
+            elif mode == 3:  # 更改任务类型模式
+                print(f"项目名称：{last_input['project']}")
+                print("\n请输入新的任务类型：")
+                last_input['task_type'] = validate_input(get_multiline_input(), "任务类型")
+            else:  # mode == 2，快速模式
+                print(f"项目名称：{last_input['project']}")
+                print(f"任务类型：{last_input['task_type']}")
+        
+        print("\n请输入任务名称：")
+        last_input['task'] = validate_input(get_multiline_input(), "任务名称")
+        
+        print("\n请输入实际工时：")
+        last_input['actual_worktime'] = validate_input(get_multiline_input(), "实际工时")
+
+        print("\n请输入工作产出：")
+        last_input['work_output'] = validate_input(get_multiline_input(), "工作产出")
+        
+        return (
+            last_input['user_name'],
+            last_input['project'],
+            last_input['task_type'],
+            last_input['task'],
+            last_input['work_output'],
+            last_input['actual_worktime']
+        )
+    except ValueError as e:
+        print(f"\n错误：{str(e)}")
+        return None
+
+def get_multiline_input():
+    """获取多行输入，使用'.'作为结束标记"""
+    lines = []
+    while True:
+        try:
+            line = input().strip()
+            if line == '.':  # 检查结束标记
+                break
+            lines.append(line)
+        except EOFError:
+            break
+    return '\n'.join(lines)
+
+def worktime_estimate(employee_name, project, task_type, task, work_output, actual_worktime):
+    """工时评估函数"""
+    try:
+        # 业务流程：
+        # 1. 根据任务类型和问题，生成工时预估阶段提示词和检查阶段提示词
+        # 2. 调用DeepSeek API，生成工时预估结果
+        # 3. 调用DeepSeek API，生成工时检查结果
+        # 4. 返回工时预估结果和工时检查结果，并保存到本地文件中
+
+        question = f'''
+        任务：{task}
+        产出：{work_output}
+        实际工时：{actual_worktime}
+        '''
+        prompt = Worktime_Estimate_Prompt()
+        prompt.task_type = task_type
+        prompt.preprocessing_question = question
+        system_preprocessing_prompt = prompt.get_system_preprocessing_prompt()
+        user_preprocessing_prompt = prompt.get_user_preprocessing_prompt()
+
+
+        # 创建数据字典，格式定义如下：
+        # |员工|项目|任务类型|任务|产出|实际工时|AI核定工时（1）|AI核定依据（1）|AI核定工时（2）|AI核定依据（2）|AI核定工时（3）|AI核定依据（3）|
+
+        data = {
+            '员工': [employee_name],
+            '项目': [project],
+            '任务类型': [task_type],
+            '任务': [task],
+            '工作产出': [work_output],
+            '实际工时': [actual_worktime],
+            'AI核定工时（1）': [''],
+            'AI核定依据（1）': [''],
+            'AI核定工时（2）': [''],
+            'AI核定依据（2）': [''],
+            'AI核定工时（3）': [''],
+            'AI核定依据（3）': ['']
+        }
+    
+        client = OpenAI(api_key="sk-70f19dde71bf46cebf9a1fc31b1d40bc", base_url="https://api.deepseek.com")
+        # 循环3次
+        
+        for i in range(3):
+            print(f"正在生成[{task}]任务的第 {i+1} 次预处理结果...")
+            response = client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {"role": "system", "content": system_preprocessing_prompt},
+                    {"role": "user", "content": user_preprocessing_prompt},
+                ],
+                stream=False
+            )
+
+            preprocessing_result = response.choices[0].message.content
+
+            prompt.check_question = preprocessing_result
+            system_check_prompt = prompt.get_system_check_prompt()
+            user_check_prompt = prompt.get_user_check_prompt()
+
+            print(f"正在生成[{task}]任务的第 {i+1} 次检查结果...")
+            response = client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {"role": "system", "content": system_check_prompt},
+                    {"role": "user", "content": user_check_prompt},
+                ],
+                stream=False
+            )
+
+            check_result = response.choices[0].message.content
+
+             # 创建数据字典，格式定义如下：
+             # |员工|项目|任务类型|任务|产出|实际工时|AI核定工时（1）|AI核定依据（1）|AI核定工时（2）|AI核定依据（2）|AI核定工时（3）|AI核定依据（3）|
+
+            data[f'AI核定工时（{i+1}）'] = [parse_worktime_result(check_result)]
+            data[f'AI核定依据（{i+1}）'] = [f"一、初步评估：\n{preprocessing_result}\n\n\n二、最终核定：\n{check_result}"]
+            print(f"第 {i+1} 次处理完成！")
+            
+            if i < 2:  # 只在前两次循环后显示倒计时
+                wait_time = random.randint(10, 15)  # 生成10-15秒的随机等待时间
+                print(f"等待DeepSeek冷却时间（{wait_time}秒）...")
+                countdown(wait_time)  # 显示随机秒数的倒计时
+
+
+        # 创建DataFrame
+        df = pd.DataFrame(data)
+        
+        # 保存文件名
+        file_name = f"{employee_name}_工时核定.csv"
+        
+        try:
+            # 如果文件存在，读取并追加
+            existing_df = pd.read_csv(file_name, encoding='utf-8-sig')
+            df = pd.concat([existing_df, df], ignore_index=True)
+        except FileNotFoundError:
+            # 如果文件不存在，直接使用新的DataFrame
+            pass
+        
+        # 保存为CSV，使用utf-8-sig编码（带BOM），这样Excel和WPS都能正确识别中文
+        df.to_csv(file_name, encoding='utf-8-sig', index=False)
+
+        return preprocessing_result, check_result
+    except Exception as e:
+        print(f"\n错误：工时评估过程中发生错误 - {str(e)}")
+        return None, None
+
+def parse_worktime_result(result_text):
+    """解析工时评估结果字符串，返回平均工时值
+    
+    Args:
+        result_text (str): AI返回的工时评估结果字符串
+        
+    Returns:
+        float: 平均工时值，精确到小数点后2位
+    """
+    try:
+        # 情况1：匹配形如 "4.92-6.3人天（含20%缓冲）" 的模式
+        pattern1 = r'\*\*(\d+\.?\d*)-(\d+\.?\d*)人天[（(]含\d+%缓冲[)）]\*\*'
+        match1 = re.search(pattern1, result_text)
+        if match1:
+            start = float(match1.group(1))
+            end = float(match1.group(2))
+            return round((start + end) / 2, 2)
+        
+        # 情况2：匹配形如 "工时评估结果：3.45人天（含15%缓冲）" 的模式
+        pattern2 = r'工时评估结果：(\d+\.?\d*)人天[（(]含\d+%缓冲[)）]'
+        match2 = re.search(pattern2, result_text)
+        if match2:
+            return round(float(match2.group(1)), 2)
+        
+        # 情况3：匹配形如 "5.8-7人天（含20%缓冲）" 的模式
+        pattern3 = r'(\d+\.?\d*)-(\d+\.?\d*)人天[（(]含\d+%缓冲[)）]'
+        match3 = re.search(pattern3, result_text)
+        if match3:
+            start = float(match3.group(1))
+            end = float(match3.group(2))
+            return round((start + end) / 2, 2)
+            
+        # 情况4：匹配形如 "5.52人天（含0%缓冲）" 的模式
+        pattern4 = r'\*\*(\d+\.?\d*)人天[（(]含\d+%缓冲[)）]\*\*'
+        match4 = re.search(pattern4, result_text)
+        if match4:
+            return round(float(match4.group(1)), 2)
+        
+        return None  # 如果没有匹配到任何模式，返回None
+        
+    except Exception as e:
+        print(f"解析工时评估结果时发生错误：{str(e)}")
+        return None
+
+def main():
+    while True:
+        try:
+            display_menu()
+            choice = input("\n请选择操作 (0-4): ").strip()
+            
+            if choice == "0":
+                print("感谢使用，再见！")
+                break
+            elif choice in ["1", "2", "3", "4"]:
+                # 获取用户输入
+                result = get_user_input(mode=int(choice))
+                if result is None:
+                    continue
+                
+                user_name, project, task_type, task, work_output, actual_worktime = result
+                
+                # 执行工时评估
+                print(f"\n正在对 {user_name} 的参加《{project}》的[{task_type}]类型任务的[{task}]工作进行工时评估...")
+                preprocessing_result, check_result = worktime_estimate(
+                    user_name, project, task_type, task, work_output, actual_worktime
+                )
+                
+                # 显示结果
+                if preprocessing_result and check_result:
+                    print(f"\n 评估结果已保存到文件：{user_name}_工时核定.csv")
+            else:
+                print("无效的选择，请输入0-4之间的数字！")
+        except Exception as e:
+            print(f"\n系统错误：{str(e)}")
+            print("请重试...")
+
+if __name__ == "__main__":
+    main()
+

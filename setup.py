@@ -13,9 +13,6 @@ setup(
     ],
     install_requires=[
         'playwright',
-        'apscheduler',
-        'psutil',
-        'pytest',
     ],
     python_requires='>=3.7',
 ) 

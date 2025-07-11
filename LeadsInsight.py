@@ -4,95 +4,19 @@ import logging
 import re
 import shutil
 from datetime import datetime
-from pathlib import Path
 from typing import Dict, List, Optional, Union, Any, Tuple
 import traceback
-import sys
 import time
-import stat
-from logging.handlers import RotatingFileHandler
-from log_cleaner import LogCleaner
-from log_checker import LogChecker
 
-# 导入Tools模块中的countdown方法
-try:
-    from hkt_agent_framework.Tools import countdown
-    logging.info("成功导入 Tools.countdown")
-except ImportError as e:
-    logging.error(f"导入 Tools.countdown 失败: {str(e)}")
+from hkt_agent_framework.LLM.ConversationFlow import ConversationFlow, MockLLMClient
+from hkt_agent_framework.LLM.SiliconCloud import SiliconCloud
+
+from hkt_agent_framework.Tools import countdown 
 
 
-def setup_logging():
-    """设置日志配置"""
-    # 确保日志目录存在
-    log_dir = 'logs'
-    if not os.path.exists(log_dir):
-        os.makedirs(log_dir)
-    
-    # 当前时间作为日志文件名的一部分
-    current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = os.path.join(log_dir, f'leads_insight_{current_time}.log')
-    
-    # 获取根日志记录器的级别
-    root_logger = logging.getLogger()
-    log_level = root_logger.level
-    
-    # 创建日志格式化器
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    
-    # 创建RotatingFileHandler
-    # 设置单个日志文件最大为10MB
-    # 保留最近的5个日志文件
-    file_handler = RotatingFileHandler(
-        log_file,
-        maxBytes=10*1024*1024,  # 10MB
-        backupCount=5,
-        encoding='utf-8'
-    )
-    file_handler.setFormatter(formatter)
-    file_handler.setLevel(log_level)
-    
-    # 创建控制台处理器
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
-    console_handler.setLevel(log_level)
-    
-    # 获取LeadsInsight日志记录器
-    logger = logging.getLogger("LeadsInsight")
-    
-    # 移除所有现有的处理器
-    for handler in logger.handlers[:]:
-        logger.removeHandler(handler)
-    
-    # 添加新的处理器
-    logger.addHandler(file_handler)
-    logger.addHandler(console_handler)
-    
-    # 设置日志级别为根日志记录器的级别
-    logger.setLevel(log_level)
-    
-    logger.info("日志系统初始化成功")
-    logger.info(f"日志文件路径: {log_file}")
-    logger.info("日志轮转配置: 单个文件最大10MB，保留最近5个文件")
-    
-    # 初始化并运行日志清理器
-    try:
-        cleaner = LogCleaner(log_dir=log_dir, retention_days=30)
-        disk_usage = cleaner.get_disk_usage()
-        if disk_usage is not None:
-            logger.info(f"当前日志目录使用空间: {disk_usage:.2f}MB")
-        
-        if cleaner.clean_old_logs():
-            logger.info("日志清理完成")
-        else:
-            logger.warning("日志清理过程中出现错误")
-    except Exception as e:
-        logger.error(f"运行日志清理器时出错: {str(e)}")
-    
-    return logger
-
-# 初始化日志系统
-logger = setup_logging()
+logger = logging.getLogger(__name__)
+root_logger = logging.getLogger()
+logger.setLevel(root_logger.level)
 
 # 导入Notable类
 from hkt_agent_framework.DingTalk.Notable import Notable
@@ -122,6 +46,10 @@ class LeadsInsight:
         self.hktlora_sales_leads_dir = os.path.join(elementor_db_dir, "hktlora_sales_leads")
         self.dingtalk_sales_leads_dir = os.path.join(elementor_db_dir, "dingtalk_sales_leads")
         self.target_table_name = target_table_name
+        self.llm_client = SiliconCloud()
+        # self.llm_client = MockLLMClient() 
+        self.llm_chat_flow = ConversationFlow(self.llm_client)
+        
         
         # 确保hktlora_sales_leads目录存在
         if not os.path.exists(self.hktlora_sales_leads_dir):
@@ -844,7 +772,7 @@ class LeadsInsight:
                 "是否查阅": record.get("read_unread", ""),
                 "留言位置": record.get("view_page_href", "")
             }
-            
+
             # 尝试从dingtalk_sales_leads目录获取dingtalk_id
             dingtalk_id = ""
             post_id = record.get("post_id", "")
@@ -859,7 +787,22 @@ class LeadsInsight:
                 except Exception as e:
                     logger.warning(f"读取submission文件失败 (post_id: {post_id}): {str(e)}")
                     # 继续处理，使用空的dingtalk_id
-           
+            
+            # 调用ConversationFlow生成回复
+            logger.info(f"开始调用ConversationFlow生成回复: {fields}")
+            
+            context = {
+                "客户": record.get("customer_name", ""),
+                "电子邮件": record.get("email", ""),
+                "国家": record.get("country", ""),
+                "留言内容": record.get("message", "")[:9999]# 留言内容截取前9999个字符, 因为钉钉多维表的Text字段长度限制为10000个字符                "留言日期": record.get("date_of_submission", ""),
+            }
+            
+            response = self.llm_chat_flow.run(initial_context=context)           
+            if response:
+                fields['AI赋能'] = {"markdown": response[-1]['response']}        
+            logger.info(f"ConversationFlow生成回复: {fields['AI赋能']}")
+            
             # 添加到记录列表
             notable_records.append({
                 "id": dingtalk_id,
